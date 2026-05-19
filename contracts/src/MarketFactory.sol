@@ -5,7 +5,10 @@ import {PredictionMarket} from "./PredictionMarket.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
 contract MarketFactory is Ownable {
-    address public collateralToken;
+    // Supported collateral tokens
+    mapping(address => bool) public supportedCollateral;
+    mapping(address => uint8) public collateralDecimals;
+
     address public oracle;
     uint16 public builderFeeRate; // basis points (e.g., 50 = 0.5%)
 
@@ -18,64 +21,84 @@ contract MarketFactory is Ownable {
         string resolutionCriteria,
         uint256 expiry,
         uint256 initialB,
+        address indexed collateral,
         address indexed creator
     );
+    event CollateralAdded(address indexed token, uint8 decimals);
+    event CollateralRemoved(address indexed token);
 
-    constructor(address _collateralToken, address _oracle) Ownable(msg.sender) {
-        collateralToken = _collateralToken;
+    constructor(address _oracle) Ownable(msg.sender) {
         oracle = _oracle;
+    }
+
+    /**
+     * @dev Add a supported collateral token (USDC, EURC, etc.)
+     */
+    function addCollateral(address token, uint8 decimals) external onlyOwner {
+        supportedCollateral[token] = true;
+        collateralDecimals[token] = decimals;
+        emit CollateralAdded(token, decimals);
+    }
+
+    /**
+     * @dev Remove a supported collateral token
+     */
+    function removeCollateral(address token) external onlyOwner {
+        supportedCollateral[token] = false;
+        emit CollateralRemoved(token);
     }
 
     /**
      * @dev Deploy a new PredictionMarket instance
      * @param question The prediction market question
-     * @param resolutionCriteria Exact, unambiguous resolution conditions
+     * @param resolutionCriteria Exact resolution conditions
      * @param expiry Unix timestamp for market expiry
-     * @param initialB LMSR liquidity parameter (scaled 1e18)
+     * @param initialB LMSR liquidity parameter (internal 18-decimal scale)
+     * @param collateral The collateral token address (must be supported)
      */
     function createMarket(
         string calldata question,
         string calldata resolutionCriteria,
         uint256 expiry,
-        uint256 initialB
+        uint256 initialB,
+        address collateral
     ) external returns (address marketAddress) {
         require(expiry > block.timestamp, "Expiry must be in the future");
         require(initialB > 0, "b must be > 0");
+        require(supportedCollateral[collateral], "Unsupported collateral");
 
-        PredictionMarket market = new PredictionMarket(question, collateralToken, initialB);
+        uint8 decimals = collateralDecimals[collateral];
+
+        PredictionMarket market = new PredictionMarket(
+            question,
+            collateral,
+            decimals,
+            initialB,
+            oracle
+        );
         marketAddress = address(market);
 
         markets.push(marketAddress);
         isMarket[marketAddress] = true;
 
-        emit MarketCreated(marketAddress, question, resolutionCriteria, expiry, initialB, msg.sender);
+        emit MarketCreated(
+            marketAddress, question, resolutionCriteria, expiry, initialB, collateral, msg.sender
+        );
     }
 
-    /**
-     * @dev Get all deployed market addresses
-     */
     function getMarkets() external view returns (address[] memory) {
         return markets;
     }
 
-    /**
-     * @dev Get the total number of markets created
-     */
     function getMarketCount() external view returns (uint256) {
         return markets.length;
     }
 
-    /**
-     * @dev Update the builder fee rate (basis points)
-     */
     function setBuilderFeeRate(uint16 _rate) external onlyOwner {
-        require(_rate <= 1000, "Fee too high"); // max 10%
+        require(_rate <= 1000, "Fee too high");
         builderFeeRate = _rate;
     }
 
-    /**
-     * @dev Update the oracle address
-     */
     function setOracle(address _oracle) external onlyOwner {
         oracle = _oracle;
     }

@@ -6,21 +6,21 @@ import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import {ResolutionOracle} from "../src/ResolutionOracle.sol";
 import {PredictionMarket} from "../src/PredictionMarket.sol";
 
-// Mock Chainlink-style price feed
 contract MockPriceFeed {
     int256 public price;
     function setPrice(int256 _price) external { price = _price; }
     function latestAnswer() external view returns (int256) { return price; }
 }
 
-contract MockUSDC4 is ERC20 {
+contract MockUSDC_RO is ERC20 {
     constructor() ERC20("Mock USDC", "USDC") {}
+    function decimals() public pure override returns (uint8) { return 6; }
 }
 
 contract ResolutionOracleTest is Test {
     ResolutionOracle public oracle;
     MockPriceFeed public feed;
-    MockUSDC4 public usdc;
+    MockUSDC_RO public usdc;
     PredictionMarket public market;
 
     address public owner = makeAddr("owner");
@@ -28,14 +28,17 @@ contract ResolutionOracleTest is Test {
     address public attacker = makeAddr("attacker");
 
     function setUp() public {
-        usdc = new MockUSDC4();
+        usdc = new MockUSDC_RO();
         feed = new MockPriceFeed();
         feed.setPrice(150000000000); // $1500.00 (8 decimals)
 
         vm.prank(owner);
         oracle = new ResolutionOracle();
 
-        market = new PredictionMarket("Will ETH > $1500?", address(usdc), 100e18);
+        // Oracle address is the ResolutionOracle contract itself
+        market = new PredictionMarket(
+            "Will ETH > $1500?", address(usdc), 6, 100e18, address(oracle)
+        );
     }
 
     // ─── Constructor ───
@@ -49,22 +52,12 @@ contract ResolutionOracleTest is Test {
     function test_configureOracle_feed() public {
         vm.prank(owner);
         oracle.configureOracle(
-            address(market),
-            ResolutionOracle.OracleTier.Feed,
-            address(feed),
-            ResolutionOracle.ComparisonType.GreaterThan,
-            150000000000, // $1500
-            block.timestamp + 7 days
+            address(market), ResolutionOracle.OracleTier.Feed, address(feed),
+            ResolutionOracle.ComparisonType.GreaterThan, 150000000000, block.timestamp + 7 days
         );
 
-        (
-            ResolutionOracle.OracleTier tier,
-            address feedAddr,
-            ,
-            int256 threshold,
-            uint256 expiry,
-            bool resolved
-        ) = oracle.oracleConfigs(address(market));
+        (ResolutionOracle.OracleTier tier, address feedAddr, , int256 threshold, uint256 expiry, bool resolved)
+            = oracle.oracleConfigs(address(market));
 
         assertEq(uint8(tier), uint8(ResolutionOracle.OracleTier.Feed));
         assertEq(feedAddr, address(feed));
@@ -76,15 +69,11 @@ contract ResolutionOracleTest is Test {
     function test_configureOracle_admin() public {
         vm.prank(owner);
         oracle.configureOracle(
-            address(market),
-            ResolutionOracle.OracleTier.Admin,
-            address(0),
-            ResolutionOracle.ComparisonType.GreaterThan,
-            0,
-            block.timestamp + 7 days
+            address(market), ResolutionOracle.OracleTier.Admin, address(0),
+            ResolutionOracle.ComparisonType.GreaterThan, 0, block.timestamp + 7 days
         );
 
-        (ResolutionOracle.OracleTier tier, , , , , ) = oracle.oracleConfigs(address(market));
+        (ResolutionOracle.OracleTier tier,,,,,) = oracle.oracleConfigs(address(market));
         assertEq(uint8(tier), uint8(ResolutionOracle.OracleTier.Admin));
     }
 
@@ -121,12 +110,10 @@ contract ResolutionOracleTest is Test {
         vm.prank(owner);
         oracle.configureOracle(
             address(market), ResolutionOracle.OracleTier.Feed, address(feed),
-            ResolutionOracle.ComparisonType.GreaterThan, 140000000000, // threshold $1400
-            block.timestamp + 1 days
+            ResolutionOracle.ComparisonType.GreaterThan, 140000000000, block.timestamp + 1 days
         );
 
-        // Feed returns $1500, threshold is $1400, comparison is GreaterThan → YES
-        feed.setPrice(150000000000);
+        feed.setPrice(150000000000); // $1500 > $1400 → YES
         vm.warp(block.timestamp + 1 days);
 
         oracle.resolveFromFeed(address(market));
@@ -139,8 +126,7 @@ contract ResolutionOracleTest is Test {
         vm.prank(owner);
         oracle.configureOracle(
             address(market), ResolutionOracle.OracleTier.Feed, address(feed),
-            ResolutionOracle.ComparisonType.GreaterThan, 160000000000, // threshold $1600
-            block.timestamp + 1 days
+            ResolutionOracle.ComparisonType.GreaterThan, 160000000000, block.timestamp + 1 days
         );
 
         feed.setPrice(150000000000); // $1500 < $1600 → NO
