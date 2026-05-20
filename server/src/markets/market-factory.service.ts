@@ -20,7 +20,7 @@ export class MarketFactoryService {
   async deployMarket(
     market: StructuredMarket,
     decision: DeploymentDecision,
-  ): Promise<string> {
+  ): Promise<{ marketId: bigint; txHash: string }> {
     if (!this.wallets.isReady()) {
       throw new Error('Circle wallet not ready');
     }
@@ -48,12 +48,51 @@ export class MarketFactoryService {
       createCalldata,
     );
 
-    // Step 2: Deploy capital from vault
-    // Note: In production, we'd wait for the create tx to confirm
-    // and read the new market address from the event logs.
-    // For the hackathon, we log the tx ID for manual verification.
-    this.logger.log(`Market creation tx: ${createTxId}`);
+    this.logger.log(`Market creation transaction submitted: ${createTxId}`);
+    const txHash = await this.wallets.waitForTransaction(createTxId);
+    this.logger.log(`Market creation transaction confirmed: ${txHash}`);
 
-    return createTxId;
+    const count = await this.blockchain.getMarketCount();
+    const marketId = count - 1n;
+    this.logger.log(`Created market ID: ${marketId.toString()}`);
+
+    // Step 2: Deploy capital from vault if deploy decision is true
+    if (decision.deploy && decision.stakeAmount > 0) {
+      const isYes = decision.stakeSide === 'YES';
+
+      // Get current price of outcome to calculate shares
+      const registryContract = this.blockchain.getMarketRegistryContract();
+      const [yesPrice, noPrice] = await registryContract.getPrice(marketId);
+      const priceBps = isYes ? Number(yesPrice) : Number(noPrice);
+      const safePriceBps = priceBps > 0 ? priceBps : 5000;
+
+      // shares = (stakeAmount * 1e16) / priceBps
+      const stakeAmountBI = BigInt(decision.stakeAmount);
+      const shares =
+        (stakeAmountBI * 10000000000000000n) / BigInt(safePriceBps);
+
+      const deployCalldata = this.blockchain.encodeVaultDeployCapital(
+        marketId,
+        isYes,
+        shares,
+      );
+
+      this.logger.log(
+        `Deploying capital to market ID ${marketId}: side=${decision.stakeSide}, stakeAmount=${decision.stakeAmount}, shares=${shares.toString()}`,
+      );
+
+      const deployTxId = await this.wallets.sendContractCall(
+        vaultAddr,
+        deployCalldata,
+      );
+
+      this.logger.log(`Vault deployment transaction submitted: ${deployTxId}`);
+      const deployTxHash = await this.wallets.waitForTransaction(deployTxId);
+      this.logger.log(
+        `Vault deployment transaction confirmed: ${deployTxHash}`,
+      );
+    }
+
+    return { marketId, txHash };
   }
 }

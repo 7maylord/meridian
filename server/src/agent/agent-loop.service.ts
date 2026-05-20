@@ -60,7 +60,7 @@ export class AgentLoopService {
           }
 
           // Step 4: Deploy market on-chain
-          const txId = await this.marketFactory.deployMarket(
+          const { marketId, txHash } = await this.marketFactory.deployMarket(
             structured,
             decision,
           );
@@ -77,10 +77,12 @@ export class AgentLoopService {
             sourceName: structured.sourceName,
             settlementToken: structured.settlementToken,
             vertical: structured.vertical,
-            status: MarketStatus.PENDING,
+            status: MarketStatus.ACTIVE,
             stakeAmount: decision.stakeAmount / 1e6,
             stakeSide: decision.stakeSide,
             articleId: article.id,
+            marketId: Number(marketId),
+            contractAddress: txHash,
           });
 
           await this.marketRepo.save(market);

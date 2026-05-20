@@ -8,12 +8,11 @@ import { CONFIG } from "@/lib/config";
 import { parseUnits } from "viem";
 
 interface TradePanelProps {
-  marketId: string;
-  contractAddress: string;
+  marketId: number | string;
   pYes: number;
 }
 
-export function TradePanel({ marketId, contractAddress, pYes }: TradePanelProps) {
+export function TradePanel({ marketId, pYes }: TradePanelProps) {
   const [side, setSide] = useState<"YES" | "NO">("YES");
   const [amount, setAmount] = useState<string>("");
   const { isConnected, address } = useAccount();
@@ -21,10 +20,12 @@ export function TradePanel({ marketId, contractAddress, pYes }: TradePanelProps)
   const numAmount = Number(amount) || 0;
   // Convert standard USDC (6 decimals) to blockchain units
   const amountToApprove = parseUnits(amount || "0", 6);
-  // Estimate shares requested (simplified mock calculation; usually you'd query the contract's LMSR math)
+  // Estimate shares requested (simplified math; 18 decimals)
   const expectedShares = numAmount / (side === "YES" ? pYes : 1 - pYes);
-  const expectedSharesScaled = BigInt(Math.floor(expectedShares * 1e6));
+  const expectedSharesScaled = parseUnits(expectedShares.toFixed(18), 18);
   const potentialReturn = expectedShares - numAmount;
+
+  const registryAddress = CONFIG.contracts.marketFactory;
 
   // Wagmi Hooks for real-time contract interactions
   const { writeContract, data: hash, isPending: isTxPending } = useWriteContract();
@@ -38,7 +39,7 @@ export function TradePanel({ marketId, contractAddress, pYes }: TradePanelProps)
     address: CONFIG.contracts.usdc as `0x${string}`,
     abi: ERC20_ABI,
     functionName: "allowance",
-    args: address ? [address, contractAddress as `0x${string}`] : undefined,
+    args: address ? [address, registryAddress as `0x${string}`] : undefined,
     query: {
       enabled: !!address,
     }
@@ -54,16 +55,16 @@ export function TradePanel({ marketId, contractAddress, pYes }: TradePanelProps)
         address: CONFIG.contracts.usdc as `0x${string}`,
         abi: ERC20_ABI,
         functionName: "approve",
-        args: [contractAddress as `0x${string}`, amountToApprove],
+        args: [registryAddress as `0x${string}`, amountToApprove],
       });
       return;
     }
 
     writeContract({
-      address: contractAddress as `0x${string}`,
+      address: registryAddress as `0x${string}`,
       abi: PREDICTION_MARKET_ABI,
       functionName: "buy",
-      args: [side === "YES", expectedSharesScaled],
+      args: [BigInt(marketId), side === "YES", expectedSharesScaled],
     });
   };
 

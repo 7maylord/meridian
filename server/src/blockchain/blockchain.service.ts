@@ -2,8 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
 import {
-  MARKET_FACTORY_ABI,
-  PREDICTION_MARKET_ABI,
+  MERIDIAN_MARKET_ABI,
   AGENT_VAULT_ABI,
   ERC20_ABI,
 } from '../config/contracts';
@@ -12,7 +11,7 @@ import {
 export class BlockchainService implements OnModuleInit {
   private readonly logger = new Logger(BlockchainService.name);
   private provider: ethers.JsonRpcProvider;
-  private factoryContract: ethers.Contract;
+  private marketContract: ethers.Contract;
   private vaultContract: ethers.Contract;
 
   constructor(private readonly config: ConfigService) {}
@@ -29,9 +28,9 @@ export class BlockchainService implements OnModuleInit {
     const factoryAddr = this.config.get<string>('contracts.marketFactory')!;
     const vaultAddr = this.config.get<string>('contracts.agentVault')!;
 
-    this.factoryContract = new ethers.Contract(
+    this.marketContract = new ethers.Contract(
       factoryAddr,
-      MARKET_FACTORY_ABI,
+      MERIDIAN_MARKET_ABI,
       this.provider,
     );
     this.vaultContract = new ethers.Contract(
@@ -42,10 +41,10 @@ export class BlockchainService implements OnModuleInit {
   }
 
   /**
-   * Get a PredictionMarket contract instance for reads.
+   * Get the MeridianMarket registry contract instance.
    */
-  getMarketContract(address: string): ethers.Contract {
-    return new ethers.Contract(address, PREDICTION_MARKET_ABI, this.provider);
+  getMarketRegistryContract(): ethers.Contract {
+    return this.marketContract;
   }
 
   /**
@@ -75,38 +74,52 @@ export class BlockchainService implements OnModuleInit {
   }
 
   /**
-   * Get all market addresses from the factory.
+   * Get total market count from the registry.
    */
-  async getAllMarkets(): Promise<string[]> {
-    return this.factoryContract.getMarkets();
+  async getMarketCount(): Promise<bigint> {
+    return this.marketContract.marketCount();
   }
 
   /**
    * Read market state.
    */
-  async getMarketState(address: string) {
-    const market = this.getMarketContract(address);
-    const [question, qYes, qNo, isResolved, outcome] = await Promise.all([
-      market.question(),
-      market.qYes(),
-      market.qNo(),
-      market.isResolved(),
-      market.outcome(),
-    ]);
+  async getMarketState(marketId: number | bigint) {
+    const [
+      question,
+      resolutionCriteria,
+      collateralToken,
+      qYes,
+      qNo,
+      expiry,
+      isResolved,
+      outcome,
+      creator,
+      totalCollateral,
+    ] = await this.marketContract.getMarket(marketId);
 
-    return { question, qYes, qNo, isResolved, outcome };
+    return {
+      question,
+      resolutionCriteria,
+      collateralToken,
+      qYes,
+      qNo,
+      expiry,
+      isResolved,
+      outcome,
+      creator,
+      totalCollateral,
+    };
   }
 
   /**
    * Get the cost to buy shares (returns 6-decimal collateral cost).
    */
   async getShareCost(
-    marketAddress: string,
+    marketId: number | bigint,
     isYes: boolean,
     shares: bigint,
   ): Promise<bigint> {
-    const market = this.getMarketContract(marketAddress);
-    return market.getCost(isYes, shares);
+    return this.marketContract.getCost(marketId, isYes, shares);
   }
 
   /**
@@ -119,7 +132,7 @@ export class BlockchainService implements OnModuleInit {
     bParam: bigint,
     collateral: string,
   ): string {
-    const iface = new ethers.Interface(MARKET_FACTORY_ABI);
+    const iface = new ethers.Interface(MERIDIAN_MARKET_ABI);
     return iface.encodeFunctionData('createMarket', [
       question,
       criteria,
@@ -130,17 +143,21 @@ export class BlockchainService implements OnModuleInit {
   }
 
   encodeVaultDeployCapital(
-    market: string,
-    amount: bigint,
+    marketId: number | bigint,
     isYes: boolean,
+    shares: bigint,
   ): string {
     const iface = new ethers.Interface(AGENT_VAULT_ABI);
-    return iface.encodeFunctionData('deployCapital', [market, amount, isYes]);
+    return iface.encodeFunctionData('deployCapital', [marketId, isYes, shares]);
   }
 
-  encodeMarketBuy(isYes: boolean, shares: bigint): string {
-    const iface = new ethers.Interface(PREDICTION_MARKET_ABI);
-    return iface.encodeFunctionData('buy', [isYes, shares]);
+  encodeMarketBuy(
+    marketId: number | bigint,
+    isYes: boolean,
+    shares: bigint,
+  ): string {
+    const iface = new ethers.Interface(MERIDIAN_MARKET_ABI);
+    return iface.encodeFunctionData('buy', [marketId, isYes, shares]);
   }
 
   getProvider(): ethers.JsonRpcProvider {

@@ -100,6 +100,40 @@ export class WalletsService implements OnModuleInit {
   }
 
   /**
+   * Poll for transaction completion and return the EVM transaction hash.
+   */
+  async waitForTransaction(
+    txId: string,
+    maxAttempts = 30,
+    intervalMs = 2000,
+  ): Promise<string> {
+    if (!this.client) throw new Error('Circle client not initialized');
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const res = await this.client.getTransaction({ id: txId });
+        const tx = res.data?.transaction;
+        if (tx) {
+          this.logger.log(`Tx ${txId} state: ${tx.state}`);
+          if (tx.state === 'COMPLETE') {
+            return tx.txHash!;
+          } else if (tx.state === 'FAILED' || tx.state === 'CANCELLED') {
+            throw new Error(`Transaction ended in state: ${tx.state}`);
+          }
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Error polling tx status (attempt ${attempt}): ${err.message}`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+    throw new Error(
+      `Transaction ${txId} timed out after ${maxAttempts} attempts`,
+    );
+  }
+
+  /**
    * Get the agent wallet address.
    */
   getAddress(): string | null {

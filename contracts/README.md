@@ -4,11 +4,11 @@ Smart contracts for the Meridian prediction market protocol — deployed on [Arc
 
 ## Deployed Addresses (Arc Testnet)
 
-| Contract | Address |
-| :--- | :--- |
-| **ResolutionOracle** | [`0x3379CdE825960C49b456c62f6bb485902B7dA830`](https://explorer.testnet.arc.network/address/0x3379CdE825960C49b456c62f6bb485902B7dA830) |
-| **MarketFactory** | [`0xF3DeE532B0d0d29c4E4B64b004b7f286E1Cf9814`](https://explorer.testnet.arc.network/address/0xF3DeE532B0d0d29c4E4B64b004b7f286E1Cf9814) |
-| **AgentVault** | [`0x18453c5914ce22F9a9c2022b24eF3Bf16eb21a71`](https://explorer.testnet.arc.network/address/0x18453c5914ce22F9a9c2022b24eF3Bf16eb21a71) |
+| Contract | Address | Explorer Link |
+| :--- | :--- | :--- |
+| **MeridianMarket** | `0xc626eba3f91d97e9c94ca20cf1449e5857d4f082` | [View on Explorer](https://explorer.testnet.arc-node.thecanteenapp.com/address/0xc626eba3f91d97e9c94ca20cf1449e5857d4f082) |
+| **ResolutionOracle** | `0x98c021d2700d49ec5b3bf21011c85012e6c68ff6` | [View on Explorer](https://explorer.testnet.arc-node.thecanteenapp.com/address/0x98c021d2700d49ec5b3bf21011c85012e6c68ff6) |
+| **AgentVault** | `0xd37670aca0a61df9123713d7b21b3af9e15f7466` | [View on Explorer](https://explorer.testnet.arc-node.thecanteenapp.com/address/0xd37670aca0a61df9123713d7b21b3af9e15f7466) |
 
 ### External Dependencies (Arc Testnet)
 
@@ -26,36 +26,41 @@ Smart contracts for the Meridian prediction market protocol — deployed on [Arc
 ## Architecture
 
 ```
-MarketFactory ──creates──▶ PredictionMarket (LMSR AMM)
-       │                         │
-       │                         ├── YES / NO ERC-20 tokens
-       │                         └── USDC or EURC collateral (6 decimals)
-       │
-ResolutionOracle ──resolves──▶ PredictionMarket
-       │
-       ├── Tier 1: Chainlink / Pyth price feeds
-       └── Tier 2: Admin-verified resolution
-
-AgentVault
-       │
-       ├── Deploys capital into markets
-       ├── Tracks P&L and calibration score
-       └── Earns yield on idle USDC via USYC Teller
+                       ┌──────────────────────┐
+                       │   ResolutionOracle   │
+                       └──────────┬───────────┘
+                                  │
+                          resolves marketId
+                                  │
+                                  ▼
+┌──────────────┐         ┌──────────────────────┐
+│  AgentVault  ├─buys/───►    MeridianMarket    ◄───trades/approves─── User / Trader
+└──────────────┘ claims  │  (Unified Registry)  │                      (USDC Collateral)
+                         └──────────────────────┘
+                         ├── Sequential marketId
+                         └── 18-decimal internal math (LMSR)
 ```
 
 ## Contracts
 
-### `PredictionMarket.sol`
-LMSR automated market maker with YES/NO outcome tokens. Accepts 6-decimal collateral (USDC/EURC) and uses 18-decimal internal math via [PRBMath](https://github.com/PaulRBerg/prb-math). Only the designated oracle can resolve the market.
-
-### `MarketFactory.sol`
-Deploys new `PredictionMarket` instances. Supports multiple collateral tokens (USDC, EURC) with configurable builder fee rates.
+### `MeridianMarket.sol`
+A unified prediction market registry implementing a logarithmic market scoring rule (LMSR) automated market maker.
+- Accepts 6-decimal collateral (USDC/EURC) and scales internal calculations to 18 decimals via [PRBMath](https://github.com/PaulRBerg/prb-math).
+- Supports buying shares on any active market via `buy(marketId, isYes, shares)`.
+- Implements pro-rata pool claiming via `claim(marketId)` when resolved, ensuring pool solvency.
+- Restricts resolution calls to the configured `ResolutionOracle` address.
 
 ### `AgentVault.sol`
-Holds the autonomous agent's USDC reserves. Manages capital deployment into markets, tracks win/loss calibration, and integrates with Circle's USYC Teller for yield on idle funds.
+Manages the autonomous agent's capital reserves.
+- Deploys capital into specific markets on the registry via `deployCapital(marketId, isYes, shares)`.
+- Claims payouts from resolved markets using `claim(marketId)`.
+- Tracks agent-specific win/loss stats, calibration scores, and P&L.
+- Interacts with Circle's USYC Teller to convert idle USDC into USYC, capturing yield.
 
 ### `ResolutionOracle.sol`
-Resolves prediction markets via on-chain price feeds (Tier 1) or admin verification (Tier 2). Supports Chainlink and Pyth data feeds.
+Resolves prediction markets registered on `MeridianMarket` via a numeric market identifier.
+- **Tier 1 (Automated Feeds)**: Validates resolutions using on-chain Chainlink / Pyth data feeds by performing comparative checks (e.g. `>` or `<` thresholds).
+- **Tier 2 (Admin Resolution)**: Provides a trusted admin-verified resolution fallback if no live data feed exists or is supported.
 
 ---
 
@@ -84,7 +89,7 @@ source .env && forge script script/DeployMeridian.s.sol:DeployMeridian \
 
 ### Environment Variables
 
-Create a `.env` file in this directory:
+Create a `.env` file in the `contracts` directory:
 
 ```env
 PRIVATE_KEY=your_deployer_private_key

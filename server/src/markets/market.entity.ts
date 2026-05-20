@@ -22,6 +22,10 @@ export class Market {
   @Index()
   contractAddress: string;
 
+  @Column({ type: 'int', nullable: true })
+  @Index()
+  marketId: number;
+
   @Column()
   question: string;
 

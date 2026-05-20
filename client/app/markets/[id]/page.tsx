@@ -114,8 +114,7 @@ export default function MarketDetailsPage() {
         <div className="lg:col-span-1">
           <div className="sticky top-24">
             <TradePanel 
-              marketId={market.id} 
-              contractAddress={market.contractAddress} 
+              marketId={market.marketId} 
               pYes={pYes} 
             />
           </div>
