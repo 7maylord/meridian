@@ -28,10 +28,7 @@ export default () => ({
     apiKey: process.env.ANTHROPIC_API_KEY,
   },
 
-  // Gemini AI (Fallback)
-  gemini: {
-    apiKey: process.env.GEMINI_API_KEY,
-  },
+
 
   // Database (Supabase)
   database: {

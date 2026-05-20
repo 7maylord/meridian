@@ -95,6 +95,11 @@ export class AgentLoopService {
           );
           await this.news.markProcessed(article.id);
         }
+        
+        // Add a 5-second delay to avoid hitting Gemini free tier rate limits (15 RPM)
+        if (articles.length > 1) {
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        }
       }
     } catch (err) {
       this.logger.error(`Agent loop error: ${err.message}`);

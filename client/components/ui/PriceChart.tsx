@@ -37,7 +37,7 @@ export function PriceChart({ data }: PriceChartProps) {
                 backdropFilter: 'blur(8px)'
               }}
               itemStyle={{ color: '#10b981' }}
-              formatter={(value: number) => [`${value}¢`, 'Price']}
+              formatter={(value: any) => [`${value}¢`, 'Price']}
             />
             <Line 
               type="monotone" 

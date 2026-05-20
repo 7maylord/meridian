@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { formatUSDC } from "@/lib/utils";
-import { ArrowRight, Wallet } from "lucide-react";
+import { ArrowRight, Wallet, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useReadContract, useWriteContract, useAccount, useWaitForTransactionReceipt } from "wagmi";
+import { PREDICTION_MARKET_ABI, ERC20_ABI } from "@/lib/abis";
+import { CONFIG } from "@/lib/config";
+import { parseUnits } from "viem";
 
 interface TradePanelProps {
   marketId: string;
@@ -12,12 +16,56 @@ interface TradePanelProps {
 export function TradePanel({ marketId, contractAddress, pYes }: TradePanelProps) {
   const [side, setSide] = useState<"YES" | "NO">("YES");
   const [amount, setAmount] = useState<string>("");
+  const { isConnected, address } = useAccount();
 
   const numAmount = Number(amount) || 0;
-  // Simplified slippage estimation for display purposes
-  // In production, this would call the contract's getCost view function via Wagmi
+  // Convert standard USDC (6 decimals) to blockchain units
+  const amountToApprove = parseUnits(amount || "0", 6);
+  // Estimate shares requested (simplified mock calculation; usually you'd query the contract's LMSR math)
   const expectedShares = numAmount / (side === "YES" ? pYes : 1 - pYes);
+  const expectedSharesScaled = BigInt(Math.floor(expectedShares * 1e6));
   const potentialReturn = expectedShares - numAmount;
+
+  // Wagmi Hooks for real-time contract interactions
+  const { writeContract, data: hash, isPending: isTxPending } = useWriteContract();
+  
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ 
+    hash 
+  });
+
+  // Example: Check allowance
+  const { data: allowance } = useReadContract({
+    address: CONFIG.contracts.usdc as `0x${string}`,
+    abi: ERC20_ABI,
+    functionName: "allowance",
+    args: address ? [address, contractAddress as `0x${string}`] : undefined,
+    query: {
+      enabled: !!address,
+    }
+  });
+
+  const needsApproval = allowance !== undefined && (allowance as bigint) < amountToApprove;
+
+  const handleTrade = async () => {
+    if (!amount || Number(amount) <= 0) return;
+
+    if (needsApproval) {
+      writeContract({
+        address: CONFIG.contracts.usdc as `0x${string}`,
+        abi: ERC20_ABI,
+        functionName: "approve",
+        args: [contractAddress as `0x${string}`, amountToApprove],
+      });
+      return;
+    }
+
+    writeContract({
+      address: contractAddress as `0x${string}`,
+      abi: PREDICTION_MARKET_ABI,
+      functionName: "buy",
+      args: [side === "YES", expectedSharesScaled],
+    });
+  };
 
   return (
     <div className="glass-panel p-6">
@@ -83,11 +131,29 @@ export function TradePanel({ marketId, contractAddress, pYes }: TradePanelProps)
         </div>
       </div>
 
-      <button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(16,185,129,0.3)]">
-        <Wallet className="w-4 h-4" />
-        Place Trade
-        <ArrowRight className="w-4 h-4" />
+      <button 
+        onClick={handleTrade}
+        disabled={isTxPending || isConfirming || !isConnected}
+        className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {!isConnected ? (
+          <>Connect Wallet to Trade</>
+        ) : isTxPending || isConfirming ? (
+          <><Loader2 className="w-4 h-4 animate-spin" /> Processing...</>
+        ) : needsApproval ? (
+          <>Approve USDC <ArrowRight className="w-4 h-4" /></>
+        ) : (
+          <>
+            <Wallet className="w-4 h-4" />
+            Place Trade
+            <ArrowRight className="w-4 h-4" />
+          </>
+        )}
       </button>
+
+      {isConfirmed && (
+        <p className="text-center text-xs text-primary mt-2 font-medium">Transaction successful!</p>
+      )}
 
       <p className="text-center text-xs text-muted-foreground mt-4">
         Trades are executed via Circle Embedded Wallets on the Arc Testnet.

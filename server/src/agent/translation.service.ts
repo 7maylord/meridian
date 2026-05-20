@@ -21,24 +21,14 @@ Only output valid JSON. Never include preamble or explanation.`;
 @Injectable()
 export class TranslationService {
   private readonly logger = new Logger(TranslationService.name);
-  private claudeClient: Anthropic | null = null;
-  private geminiClient: any | null = null;
+  private client: Anthropic | null = null;
 
   constructor(private readonly config: ConfigService) {
-    const claudeKey = this.config.get<string>('anthropic.apiKey');
-    if (claudeKey) {
-      this.claudeClient = new Anthropic({ apiKey: claudeKey });
+    const apiKey = this.config.get<string>('anthropic.apiKey');
+    if (apiKey) {
+      this.client = new Anthropic({ apiKey });
     } else {
-      this.logger.warn('ANTHROPIC_API_KEY not set — Claude disabled');
-    }
-
-    const geminiKey = this.config.get<string>('gemini.apiKey');
-    if (geminiKey) {
-      // Import dynamically or assume it's available since we installed it
-      const { GoogleGenAI } = require('@google/genai');
-      this.geminiClient = new GoogleGenAI({ apiKey: geminiKey });
-    } else {
-      this.logger.warn('GEMINI_API_KEY not set — Gemini disabled');
+      this.logger.warn('ANTHROPIC_API_KEY not set — translation disabled');
     }
   }
 
@@ -48,68 +38,42 @@ export class TranslationService {
   async structureArticle(
     article: Article,
   ): Promise<StructuredMarket | null> {
-    if (!this.claudeClient && !this.geminiClient) {
-      this.logger.warn('No AI clients initialized');
+    if (!this.client) {
+      this.logger.warn('Claude client not initialized');
       return null;
     }
 
-    const prompt = `Source: ${article.sourceName} (${article.sourceLanguage})\nTitle: ${article.title}\nContent: ${article.content?.slice(0, 2000) || 'No content available'}`;
-
     try {
-      if (this.claudeClient) {
-        return await this.callClaude(prompt, article);
-      }
-      throw new Error('Claude client not available');
+      const message = await this.client.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: SYSTEM_PROMPT,
+        messages: [
+          {
+            role: 'user',
+            content: `Source: ${article.sourceName} (${article.sourceLanguage})\nTitle: ${article.title}\nContent: ${article.content?.slice(0, 2000) || 'No content available'}`,
+          },
+        ],
+      });
+
+      const raw =
+        message.content[0].type === 'text' ? message.content[0].text : '';
+
+      // Strip markdown code fences if Claude wraps the JSON
+      const text = raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+      const parsed: StructuredMarket = JSON.parse(text);
+
+      // Attach source metadata
+      parsed.sourceLanguage = article.sourceLanguage;
+      parsed.sourceName = article.sourceName;
+
+      this.logger.log(`Structured: "${parsed.question}" (p=${parsed.pYes})`);
+      return parsed;
     } catch (err) {
-      this.logger.warn(`Claude failed: ${err.message}. Trying Gemini...`);
-      
-      try {
-        if (this.geminiClient) {
-          return await this.callGemini(prompt, article);
-        }
-        throw new Error('Gemini client not available');
-      } catch (geminiErr) {
-        this.logger.error(`Both AI clients failed for "${article.title}". Gemini Error: ${geminiErr.message}`);
-        return null;
-      }
+      this.logger.error(
+        `Failed to structure article "${article.title}": ${err.message}`,
+      );
+      return null;
     }
-  }
-
-  private async callClaude(prompt: string, article: Article): Promise<StructuredMarket> {
-    const message = await this.claudeClient!.messages.create({
-      model: 'claude-sonnet-4-20250514', // using the user's previously set model, note it's deprecated but we keep it
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const text = message.content[0].type === 'text' ? message.content[0].text : '';
-    const parsed: StructuredMarket = JSON.parse(text);
-
-    parsed.sourceLanguage = article.sourceLanguage;
-    parsed.sourceName = article.sourceName;
-
-    this.logger.log(`Claude Structured: "${parsed.question}" (p=${parsed.pYes})`);
-    return parsed;
-  }
-
-  private async callGemini(prompt: string, article: Article): Promise<StructuredMarket> {
-    const response = await this.geminiClient!.models.generateContent({
-      model: 'gemini-2.5-pro',
-      contents: prompt,
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        responseMimeType: 'application/json',
-      }
-    });
-
-    const text = response.text || '';
-    const parsed: StructuredMarket = JSON.parse(text);
-
-    parsed.sourceLanguage = article.sourceLanguage;
-    parsed.sourceName = article.sourceName;
-
-    this.logger.log(`Gemini Structured: "${parsed.question}" (p=${parsed.pYes})`);
-    return parsed;
   }
 }

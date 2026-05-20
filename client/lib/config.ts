@@ -9,7 +9,7 @@ export const CONFIG = {
   chain: {
     id: 5042002,
     name: "Arc Testnet",
-    rpcUrl: "https://rpc.testnet.arc-node.thecanteenapp.com/v1/your_key", // Usually from env in prod
+    rpcUrl: process.env.NEXT_PUBLIC_ARC_RPC_URL || "https://rpc.testnet.arc-node.thecanteenapp.com/v1",
     explorerUrl: "https://explorer.testnet.arc-node.thecanteenapp.com",
   },
 };
