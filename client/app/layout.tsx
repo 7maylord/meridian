@@ -4,6 +4,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 import Link from "next/link";
 import { Globe, Activity, LayoutDashboard, Wallet } from "lucide-react";
+import { ConnectButton } from "@/components/ui/ConnectButton";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -45,10 +46,7 @@ export default function RootLayout({
               </nav>
 
               <div className="flex items-center">
-                {/* Standard Wallet Connect Button Placeholder */}
-                <button className="bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
-                  <Wallet className="w-4 h-4" /> Connect Wallet
-                </button>
+                <ConnectButton />
               </div>
             </div>
           </header>
@@ -61,3 +59,4 @@ export default function RootLayout({
     </html>
   );
 }
+

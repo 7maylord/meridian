@@ -1,11 +1,13 @@
 "use client";
 
-import { useAccount } from "wagmi";
+import { usePrivy } from "@privy-io/react-auth";
 import { formatUSDC } from "@/lib/utils";
-import { Wallet, History, AlertCircle } from "lucide-react";
+import { Wallet, History, AlertCircle, Loader2 } from "lucide-react";
 
 export default function PortfolioPage() {
-  const { address, isConnected } = useAccount();
+  const { ready, authenticated, login, user } = usePrivy();
+  const address = user?.wallet?.address;
+  const isConnected = ready && authenticated;
 
   if (!isConnected) {
     return (
@@ -17,7 +19,11 @@ export default function PortfolioPage() {
         <p className="text-muted-foreground leading-relaxed">
           Connect your wallet to view your active predictions, claim payouts, and track your historical performance against the agent.
         </p>
-        <button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-8 py-3 rounded-xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+        <button
+          onClick={() => login()}
+          className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-8 py-3 rounded-xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] flex items-center gap-2"
+        >
+          <Wallet className="w-4 h-4" />
           Connect Wallet
         </button>
       </div>

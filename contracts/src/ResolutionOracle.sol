@@ -3,11 +3,26 @@ pragma solidity ^0.8.20;
 
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
+interface IMeridianMarket {
+    function resolve(uint256 marketId, bool outcome) external;
+    function getMarket(uint256 marketId) external view returns (
+        string memory question,
+        string memory resolutionCriteria,
+        address collateralToken,
+        uint256 qYes,
+        uint256 qNo,
+        uint256 expiry,
+        bool isResolved,
+        bool outcome,
+        address creator,
+        uint256 totalCollateral
+    );
+}
+
 /**
  * @title ResolutionOracle
  * @dev Resolves prediction markets via data feeds (Tier 1) or admin verification (Tier 2).
- *      Tier 1: Chainlink/Pyth price feeds for FX, rates, etc.
- *      Tier 2: Admin-verified resolution for events without on-chain feeds.
+ *      Now references markets by ID rather than by contract address.
  */
 contract ResolutionOracle is Ownable {
     enum OracleTier { Feed, Admin }
@@ -22,17 +37,21 @@ contract ResolutionOracle is Ownable {
         bool resolved;
     }
 
-    // market address => oracle config
-    mapping(address => OracleConfig) public oracleConfigs;
+    // The single MeridianMarket contract
+    IMeridianMarket public meridianMarket;
+
+    // marketId => oracle config
+    mapping(uint256 => OracleConfig) public oracleConfigs;
 
     // Authorized verifiers for Tier 2 (admin) resolution
     mapping(address => bool) public verifiers;
 
-    event OracleConfigured(address indexed market, OracleTier tier, uint256 expiry);
-    event MarketResolved(address indexed market, bool outcome, OracleTier tier);
+    event OracleConfigured(uint256 indexed marketId, OracleTier tier, uint256 expiry);
+    event MarketResolved(uint256 indexed marketId, bool outcome, OracleTier tier);
     event VerifierUpdated(address indexed verifier, bool authorized);
 
-    constructor() Ownable(msg.sender) {
+    constructor(address _meridianMarket) Ownable(msg.sender) {
+        meridianMarket = IMeridianMarket(_meridianMarket);
         verifiers[msg.sender] = true;
     }
 
@@ -43,29 +62,23 @@ contract ResolutionOracle is Ownable {
 
     /**
      * @dev Configure oracle for a market
-     * @param market The PredictionMarket address
-     * @param tier Resolution tier (Feed or Admin)
-     * @param feedAddress Chainlink/Pyth feed address (address(0) for Tier 2)
-     * @param comparison How to compare feed value to threshold
-     * @param threshold The value to compare against (scaled by feed decimals)
-     * @param expiry When resolution can be triggered
      */
     function configureOracle(
-        address market,
+        uint256 marketId,
         OracleTier tier,
         address feedAddress,
         ComparisonType comparison,
         int256 threshold,
         uint256 expiry
     ) external onlyOwner {
-        require(!oracleConfigs[market].resolved, "Already resolved");
+        require(!oracleConfigs[marketId].resolved, "Already resolved");
         require(expiry > block.timestamp, "Expiry in past");
 
         if (tier == OracleTier.Feed) {
             require(feedAddress != address(0), "Feed address required for Tier 1");
         }
 
-        oracleConfigs[market] = OracleConfig({
+        oracleConfigs[marketId] = OracleConfig({
             tier: tier,
             feedAddress: feedAddress,
             comparison: comparison,
@@ -74,21 +87,18 @@ contract ResolutionOracle is Ownable {
             resolved: false
         });
 
-        emit OracleConfigured(market, tier, expiry);
+        emit OracleConfigured(marketId, tier, expiry);
     }
 
     /**
      * @dev Tier 1: Resolve a market from a Chainlink/Pyth data feed
-     * @param market The PredictionMarket to resolve
      */
-    function resolveFromFeed(address market) external {
-        OracleConfig storage config = oracleConfigs[market];
+    function resolveFromFeed(uint256 marketId) external {
+        OracleConfig storage config = oracleConfigs[marketId];
         require(!config.resolved, "Already resolved");
         require(config.tier == OracleTier.Feed, "Not a feed-based market");
         require(block.timestamp >= config.expiry, "Not yet expired");
 
-        // Read latest answer from Chainlink-style feed
-        // Interface: function latestAnswer() external view returns (int256)
         (bool success, bytes memory data) = config.feedAddress.staticcall(
             abi.encodeWithSignature("latestAnswer()")
         );
@@ -98,48 +108,34 @@ contract ResolutionOracle is Ownable {
         bool outcome = _compare(answer, config.comparison, config.threshold);
         config.resolved = true;
 
-        // Call resolve on the PredictionMarket
-        (bool resolveSuccess,) = market.call(
-            abi.encodeWithSignature("resolve(bool)", outcome)
-        );
-        require(resolveSuccess, "Market resolve failed");
-
-        emit MarketResolved(market, outcome, OracleTier.Feed);
+        meridianMarket.resolve(marketId, outcome);
+        emit MarketResolved(marketId, outcome, OracleTier.Feed);
     }
 
     /**
      * @dev Tier 2: Admin-verified resolution
-     * @param market The PredictionMarket to resolve
-     * @param outcome The resolution outcome (true = YES wins)
      */
-    function resolveAdmin(address market, bool outcome) external onlyVerifier {
-        OracleConfig storage config = oracleConfigs[market];
+    function resolveAdmin(uint256 marketId, bool outcome) external onlyVerifier {
+        OracleConfig storage config = oracleConfigs[marketId];
         require(!config.resolved, "Already resolved");
         require(config.tier == OracleTier.Admin, "Not an admin-resolved market");
         require(block.timestamp >= config.expiry, "Not yet expired");
 
         config.resolved = true;
 
-        // Call resolve on the PredictionMarket
-        (bool resolveSuccess,) = market.call(
-            abi.encodeWithSignature("resolve(bool)", outcome)
-        );
-        require(resolveSuccess, "Market resolve failed");
-
-        emit MarketResolved(market, outcome, OracleTier.Admin);
+        meridianMarket.resolve(marketId, outcome);
+        emit MarketResolved(marketId, outcome, OracleTier.Admin);
     }
 
-    /**
-     * @dev Add or remove a verifier
-     */
     function setVerifier(address verifier, bool authorized) external onlyOwner {
         verifiers[verifier] = authorized;
         emit VerifierUpdated(verifier, authorized);
     }
 
-    /**
-     * @dev Internal comparison function
-     */
+    function setMeridianMarket(address _meridianMarket) external onlyOwner {
+        meridianMarket = IMeridianMarket(_meridianMarket);
+    }
+
     function _compare(int256 value, ComparisonType comp, int256 threshold) internal pure returns (bool) {
         if (comp == ComparisonType.GreaterThan) return value > threshold;
         if (comp == ComparisonType.LessThan) return value < threshold;

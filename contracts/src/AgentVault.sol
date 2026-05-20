@@ -20,27 +20,50 @@ interface ITeller {
     function redeem(uint256 shares, address receiver, address account) external returns (uint256);
 }
 
+/// @dev Interface for the unified MeridianMarket contract
+interface IMeridianMarketVault {
+    function buy(uint256 marketId, bool isYes, uint256 shares) external;
+    function claim(uint256 marketId) external;
+    function getCost(uint256 marketId, bool isYes, uint256 shares) external view returns (uint256);
+    function getUserPosition(uint256 marketId, address user) external view returns (uint256 yesShares, uint256 noShares);
+    function getMarket(uint256 marketId) external view returns (
+        string memory question,
+        string memory resolutionCriteria,
+        address collateralToken,
+        uint256 qYes,
+        uint256 qNo,
+        uint256 expiry,
+        bool isResolved,
+        bool outcome,
+        address creator,
+        uint256 totalCollateral
+    );
+}
+
 /**
  * @title AgentVault
- * @dev Holds the agent's USDC reserves, authorizes capital deployment into markets,
+ * @dev Holds the agent's USDC reserves, deploys capital into MeridianMarket markets,
  *      tracks calibration P&L, and earns yield on idle capital via USYC.
+ *      Now wired to the single MeridianMarket contract using market IDs.
  */
 contract AgentVault is Ownable {
     IERC20 public collateralToken; // USDC (6 decimals on Arc)
     IERC20 public usycToken;       // USYC token (6 decimals)
     ITeller public teller;         // USYC Teller contract
     address public agent;          // Authorized agent EOA
+    IMeridianMarketVault public meridianMarket; // The single market contract
 
-    // Calibration tracking per market
+    // Calibration tracking per market (now by ID)
     struct MarketPosition {
-        uint256 amountDeployed;
+        uint256 amountDeployed; // Collateral spent (6-decimal USDC)
+        uint256 shares;         // Shares purchased (18-decimal scale)
         bool isYes;
         bool settled;
         uint256 payout;
     }
 
-    mapping(address => MarketPosition) public positions;
-    address[] public activeMarkets;
+    mapping(uint256 => MarketPosition) public positions;
+    uint256[] public activeMarketIds;
 
     // Aggregate P&L tracking
     uint256 public totalDeployed;
@@ -48,9 +71,9 @@ contract AgentVault is Ownable {
     uint256 public marketsWon;
     uint256 public marketsLost;
 
-    event CapitalDeployed(address indexed market, uint256 amount, bool isYes);
-    event CapitalWithdrawn(address indexed market, uint256 payout);
-    event OutcomeRecorded(address indexed market, bool won, uint256 payout);
+    event CapitalDeployed(uint256 indexed marketId, uint256 amount, uint256 shares, bool isYes);
+    event CapitalClaimed(uint256 indexed marketId, uint256 payout);
+    event OutcomeRecorded(uint256 indexed marketId, bool won, uint256 payout);
     event DepositedToUsyc(uint256 usdcAmount, uint256 usycReceived);
     event RedeemedFromUsyc(uint256 usycAmount, uint256 usdcReceived);
 
@@ -63,42 +86,78 @@ contract AgentVault is Ownable {
         address _collateralToken,
         address _usycToken,
         address _teller,
-        address _agent
+        address _agent,
+        address _meridianMarket
     ) Ownable(msg.sender) {
         collateralToken = IERC20(_collateralToken);
         usycToken = IERC20(_usycToken);
         teller = ITeller(_teller);
         agent = _agent;
+        meridianMarket = IMeridianMarketVault(_meridianMarket);
+
+        // Pre-approve the MeridianMarket contract to pull USDC
+        IERC20(_collateralToken).approve(_meridianMarket, type(uint256).max);
     }
 
+    // ──────────────────────────────────────────────
+    // Market Trading
+    // ──────────────────────────────────────────────
+
     /**
-     * @dev Deploy capital from the vault into a prediction market
+     * @dev Deploy capital from the vault into a prediction market by buying shares.
+     *      The vault approves and calls MeridianMarket.buy() directly.
+     * @param marketId The MeridianMarket market ID
+     * @param isYes true = buy YES, false = buy NO
+     * @param shares Number of shares in 18-decimal scale
      */
-    function deployCapital(address market, uint256 amount, bool isYes) external onlyAgent {
-        require(positions[market].amountDeployed == 0, "Already deployed to this market");
-        require(collateralToken.balanceOf(address(this)) >= amount, "Insufficient vault balance");
+    function deployCapital(uint256 marketId, bool isYes, uint256 shares) external onlyAgent {
+        require(positions[marketId].amountDeployed == 0, "Already deployed to this market");
 
-        collateralToken.approve(market, amount);
+        // Calculate the cost first
+        uint256 cost = meridianMarket.getCost(marketId, isYes, shares);
+        require(collateralToken.balanceOf(address(this)) >= cost, "Insufficient vault balance");
 
-        positions[market] = MarketPosition({
-            amountDeployed: amount,
+        // Buy shares on the MeridianMarket
+        meridianMarket.buy(marketId, isYes, shares);
+
+        positions[marketId] = MarketPosition({
+            amountDeployed: cost,
+            shares: shares,
             isYes: isYes,
             settled: false,
             payout: 0
         });
-        activeMarkets.push(market);
-        totalDeployed += amount;
+        activeMarketIds.push(marketId);
+        totalDeployed += cost;
 
-        emit CapitalDeployed(market, amount, isYes);
+        emit CapitalDeployed(marketId, cost, shares, isYes);
     }
 
     /**
-     * @dev Record the outcome of a resolved market
+     * @dev Claim winnings from a resolved market. 
+     *      Calls MeridianMarket.claim() which transfers collateral back to the vault.
      */
-    function recordOutcome(address market, bool won, uint256 payout) external onlyAgent {
-        MarketPosition storage pos = positions[market];
+    function claimWinnings(uint256 marketId) external onlyAgent {
+        MarketPosition storage pos = positions[marketId];
         require(pos.amountDeployed > 0, "No position in this market");
         require(!pos.settled, "Already settled");
+
+        // Check if market is resolved
+        (,,,,,,bool isResolved, bool outcome,,) = meridianMarket.getMarket(marketId);
+        require(isResolved, "Market not resolved yet");
+
+        uint256 balBefore = collateralToken.balanceOf(address(this));
+
+        // Determine if we won
+        bool won = (outcome == pos.isYes);
+
+        if (won) {
+            // Claim payout from MeridianMarket
+            meridianMarket.claim(marketId);
+        }
+
+        uint256 balAfter = collateralToken.balanceOf(address(this));
+        uint256 payout = balAfter - balBefore;
 
         pos.settled = true;
         pos.payout = payout;
@@ -110,8 +169,12 @@ contract AgentVault is Ownable {
             marketsLost++;
         }
 
-        emit OutcomeRecorded(market, won, payout);
+        emit OutcomeRecorded(marketId, won, payout);
     }
+
+    // ──────────────────────────────────────────────
+    // View Functions
+    // ──────────────────────────────────────────────
 
     /**
      * @dev Get available USDC capital (not deployed, not in USYC)
@@ -137,10 +200,35 @@ contract AgentVault is Ownable {
     }
 
     /**
+     * @dev Get the net P&L of the vault
+     */
+    function getNetPnL() external view returns (int256) {
+        return int256(totalReturned) - int256(totalDeployed);
+    }
+
+    /**
+     * @dev Get active market count
+     */
+    function getActiveMarketCount() external view returns (uint256) {
+        return activeMarketIds.length;
+    }
+
+    /**
      * @dev Update the authorized agent address
      */
     function setAgent(address _agent) external onlyOwner {
         agent = _agent;
+    }
+
+    /**
+     * @dev Update the MeridianMarket contract (and re-approve)
+     */
+    function setMeridianMarket(address _meridianMarket) external onlyOwner {
+        // Revoke old approval
+        collateralToken.approve(address(meridianMarket), 0);
+        // Set new
+        meridianMarket = IMeridianMarketVault(_meridianMarket);
+        collateralToken.approve(_meridianMarket, type(uint256).max);
     }
 
     // ──────────────────────────────────────────────
@@ -153,13 +241,8 @@ contract AgentVault is Ownable {
      */
     function depositToUsyc(uint256 amount) external onlyAgent {
         require(collateralToken.balanceOf(address(this)) >= amount, "Insufficient USDC");
-
-        // Approve Teller to pull USDC
         collateralToken.approve(address(teller), amount);
-
-        // Deposit USDC → receive USYC
         uint256 usycReceived = teller.deposit(amount, address(this));
-
         emit DepositedToUsyc(amount, usycReceived);
     }
 
@@ -169,13 +252,8 @@ contract AgentVault is Ownable {
      */
     function redeemFromUsyc(uint256 amount) external onlyAgent {
         require(usycToken.balanceOf(address(this)) >= amount, "Insufficient USYC");
-
-        // Approve Teller to pull USYC
         usycToken.approve(address(teller), amount);
-
-        // Redeem USYC → receive USDC
         uint256 usdcReceived = teller.redeem(amount, address(this), address(this));
-
         emit RedeemedFromUsyc(amount, usdcReceived);
     }
 }

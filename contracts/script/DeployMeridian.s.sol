@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {Script, console} from "forge-std/Script.sol";
+import {MeridianMarket} from "../src/MeridianMarket.sol";
 import {ResolutionOracle} from "../src/ResolutionOracle.sol";
-import {MarketFactory} from "../src/MarketFactory.sol";
 import {AgentVault} from "../src/AgentVault.sol";
 
 contract DeployMeridian is Script {
@@ -22,34 +22,38 @@ contract DeployMeridian is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // 1. Deploy ResolutionOracle
-        ResolutionOracle oracle = new ResolutionOracle();
+        // 1. Deploy MeridianMarket (oracle set to address(0) initially)
+        MeridianMarket market = new MeridianMarket(address(0));
+        console.log("MeridianMarket deployed at:", address(market));
+
+        // 2. Deploy ResolutionOracle (pointing at the market)
+        ResolutionOracle oracle = new ResolutionOracle(address(market));
         console.log("ResolutionOracle deployed at:", address(oracle));
 
-        // 2. Deploy MarketFactory
-        MarketFactory factory = new MarketFactory(address(oracle));
-        console.log("MarketFactory deployed at:", address(factory));
+        // 3. Set the oracle on the market
+        market.setOracle(address(oracle));
+        console.log("Oracle set on MeridianMarket");
 
-        // 3. Register supported collateral tokens (both 6 decimals)
-        factory.addCollateral(ARC_USDC, 6);
-        factory.addCollateral(ARC_EURC, 6);
+        // 4. Register supported collateral tokens (both 6 decimals)
+        market.addCollateral(ARC_USDC, 6);
+        market.addCollateral(ARC_EURC, 6);
         console.log("Registered USDC and EURC as collateral");
 
-        // 4. Deploy AgentVault (USDC collateral, USYC yield, Teller bridge)
-        AgentVault vault = new AgentVault(ARC_USDC, ARC_USYC, ARC_TELLER, deployer);
+        // 5. Deploy AgentVault (USDC collateral, USYC yield, Teller bridge, agent, market)
+        AgentVault vault = new AgentVault(ARC_USDC, ARC_USYC, ARC_TELLER, deployer, address(market));
         console.log("AgentVault deployed at:", address(vault));
 
         vm.stopBroadcast();
 
         // Print summary
         console.log("\n=== DEPLOYMENT SUMMARY ===");
-        console.log("USDC (native):    ", ARC_USDC);
-        console.log("EURC:             ", ARC_EURC);
-        console.log("USYC:             ", ARC_USYC);
-        console.log("Teller:           ", ARC_TELLER);
-        console.log("ResolutionOracle: ", address(oracle));
-        console.log("MarketFactory:    ", address(factory));
-        console.log("AgentVault:       ", address(vault));
+        console.log("USDC (native):      ", ARC_USDC);
+        console.log("EURC:               ", ARC_EURC);
+        console.log("USYC:               ", ARC_USYC);
+        console.log("Teller:             ", ARC_TELLER);
+        console.log("MeridianMarket:     ", address(market));
+        console.log("ResolutionOracle:   ", address(oracle));
+        console.log("AgentVault:         ", address(vault));
         console.log("==========================\n");
     }
 }

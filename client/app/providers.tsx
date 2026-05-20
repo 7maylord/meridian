@@ -1,11 +1,14 @@
 "use client";
 
+import { PrivyProvider } from "@privy-io/react-auth";
+import { WagmiProvider, createConfig } from "@privy-io/wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createConfig, http, WagmiProvider } from "wagmi";
+import { http } from "wagmi";
 import { defineChain } from "viem";
-import { CONFIG } from "../lib/config";
+import { CONFIG } from "@/lib/config";
 import { useState } from "react";
 
+// Define Arc Testnet
 const arcTestnet = defineChain({
   id: CONFIG.chain.id,
   name: CONFIG.chain.name,
@@ -17,17 +20,17 @@ const arcTestnet = defineChain({
   },
   rpcUrls: {
     default: { http: [CONFIG.chain.rpcUrl] },
-    public: { http: [CONFIG.chain.rpcUrl] },
   },
   blockExplorers: {
     default: { name: "ArcExplorer", url: CONFIG.chain.explorerUrl },
   },
 });
 
-const config = createConfig({
+// Wagmi config via Privy's createConfig (keeps Privy and Wagmi in sync)
+const wagmiConfig = createConfig({
   chains: [arcTestnet],
   transports: {
-    [arcTestnet.id]: http(),
+    [arcTestnet.id]: http(CONFIG.chain.rpcUrl),
   },
 });
 
@@ -35,10 +38,27 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
 
   return (
-    <WagmiProvider config={config}>
+    <PrivyProvider
+      appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID || ""}
+      config={{
+        appearance: {
+          theme: "dark",
+          accentColor: "#10b981",
+        },
+        defaultChain: arcTestnet,
+        supportedChains: [arcTestnet],
+        embeddedWallets: {
+          ethereum: {
+            createOnLogin: "users-without-wallets",
+          },
+        },
+      }}
+    >
       <QueryClientProvider client={queryClient}>
-        {children}
+        <WagmiProvider config={wagmiConfig}>
+          {children}
+        </WagmiProvider>
       </QueryClientProvider>
-    </WagmiProvider>
+    </PrivyProvider>
   );
 }
