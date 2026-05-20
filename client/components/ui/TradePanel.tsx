@@ -3,7 +3,7 @@ import { formatUSDC } from "@/lib/utils";
 import { ArrowRight, Wallet, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useReadContract, useWriteContract, useAccount, useWaitForTransactionReceipt } from "wagmi";
-import { PREDICTION_MARKET_ABI, ERC20_ABI } from "@/lib/abis";
+import { MERIDIAN_MARKET_ABI, ERC20_ABI } from "@/lib/abis";
 import { CONFIG } from "@/lib/config";
 import { parseUnits } from "viem";
 
@@ -62,7 +62,7 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
 
     writeContract({
       address: registryAddress as `0x${string}`,
-      abi: PREDICTION_MARKET_ABI,
+      abi: MERIDIAN_MARKET_ABI,
       functionName: "buy",
       args: [BigInt(marketId), side === "YES", expectedSharesScaled],
     });
