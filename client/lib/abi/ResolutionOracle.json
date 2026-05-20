@@ -1,7 +1,13 @@
 [
   {
     "type": "constructor",
-    "inputs": [],
+    "inputs": [
+      {
+        "name": "_meridianMarket",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
     "stateMutability": "nonpayable"
   },
   {
@@ -9,9 +15,9 @@
     "name": "configureOracle",
     "inputs": [
       {
-        "name": "market",
-        "type": "address",
-        "internalType": "address"
+        "name": "marketId",
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
         "name": "tier",
@@ -44,12 +50,25 @@
   },
   {
     "type": "function",
+    "name": "meridianMarket",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IMeridianMarket"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "oracleConfigs",
     "inputs": [
       {
         "name": "",
-        "type": "address",
-        "internalType": "address"
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
@@ -111,9 +130,9 @@
     "name": "resolveAdmin",
     "inputs": [
       {
-        "name": "market",
-        "type": "address",
-        "internalType": "address"
+        "name": "marketId",
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
         "name": "outcome",
@@ -129,7 +148,20 @@
     "name": "resolveFromFeed",
     "inputs": [
       {
-        "name": "market",
+        "name": "marketId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMeridianMarket",
+    "inputs": [
+      {
+        "name": "_meridianMarket",
         "type": "address",
         "internalType": "address"
       }
@@ -192,10 +224,10 @@
     "name": "MarketResolved",
     "inputs": [
       {
-        "name": "market",
-        "type": "address",
+        "name": "marketId",
+        "type": "uint256",
         "indexed": true,
-        "internalType": "address"
+        "internalType": "uint256"
       },
       {
         "name": "outcome",
@@ -217,10 +249,10 @@
     "name": "OracleConfigured",
     "inputs": [
       {
-        "name": "market",
-        "type": "address",
+        "name": "marketId",
+        "type": "uint256",
         "indexed": true,
-        "internalType": "address"
+        "internalType": "uint256"
       },
       {
         "name": "tier",

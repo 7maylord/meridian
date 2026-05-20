@@ -21,13 +21,18 @@
         "name": "_agent",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "_meridianMarket",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "activeMarkets",
+    "name": "activeMarketIds",
     "inputs": [
       {
         "name": "",
@@ -38,8 +43,8 @@
     "outputs": [
       {
         "name": "",
-        "type": "address",
-        "internalType": "address"
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -59,6 +64,19 @@
   },
   {
     "type": "function",
+    "name": "claimWinnings",
+    "inputs": [
+      {
+        "name": "marketId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "collateralToken",
     "inputs": [],
     "outputs": [
@@ -75,12 +93,7 @@
     "name": "deployCapital",
     "inputs": [
       {
-        "name": "market",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
+        "name": "marketId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -88,6 +101,11 @@
         "name": "isYes",
         "type": "bool",
         "internalType": "bool"
+      },
+      {
+        "name": "shares",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -105,6 +123,19 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getActiveMarketCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -133,6 +164,19 @@
         "name": "totalMarkets",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getNetPnL",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "int256",
+        "internalType": "int256"
       }
     ],
     "stateMutability": "view"
@@ -178,6 +222,19 @@
   },
   {
     "type": "function",
+    "name": "meridianMarket",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IMeridianMarketVault"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "owner",
     "inputs": [],
     "outputs": [
@@ -195,13 +252,18 @@
     "inputs": [
       {
         "name": "",
-        "type": "address",
-        "internalType": "address"
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
       {
         "name": "amountDeployed",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "shares",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -222,29 +284,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "recordOutcome",
-    "inputs": [
-      {
-        "name": "market",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "won",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "payout",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -272,6 +311,19 @@
     "inputs": [
       {
         "name": "_agent",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMeridianMarket",
+    "inputs": [
+      {
+        "name": "_meridianMarket",
         "type": "address",
         "internalType": "address"
       }
@@ -346,16 +398,41 @@
   },
   {
     "type": "event",
+    "name": "CapitalClaimed",
+    "inputs": [
+      {
+        "name": "marketId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "payout",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "CapitalDeployed",
     "inputs": [
       {
-        "name": "market",
-        "type": "address",
+        "name": "marketId",
+        "type": "uint256",
         "indexed": true,
-        "internalType": "address"
+        "internalType": "uint256"
       },
       {
         "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "shares",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -365,25 +442,6 @@
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "CapitalWithdrawn",
-    "inputs": [
-      {
-        "name": "market",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "payout",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -412,10 +470,10 @@
     "name": "OutcomeRecorded",
     "inputs": [
       {
-        "name": "market",
-        "type": "address",
+        "name": "marketId",
+        "type": "uint256",
         "indexed": true,
-        "internalType": "address"
+        "internalType": "uint256"
       },
       {
         "name": "won",
