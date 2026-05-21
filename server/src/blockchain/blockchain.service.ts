@@ -4,6 +4,7 @@ import { ethers } from 'ethers';
 import {
   MERIDIAN_MARKET_ABI,
   AGENT_VAULT_ABI,
+  RESOLUTION_ORACLE_ABI,
   ERC20_ABI,
 } from '../config/contracts';
 
@@ -158,6 +159,18 @@ export class BlockchainService implements OnModuleInit {
   ): string {
     const iface = new ethers.Interface(MERIDIAN_MARKET_ABI);
     return iface.encodeFunctionData('buy', [marketId, isYes, shares]);
+  }
+
+  encodeConfigureOracle(marketId: number | bigint, expiry: bigint): string {
+    const iface = new ethers.Interface(RESOLUTION_ORACLE_ABI);
+    return iface.encodeFunctionData('configureOracle', [
+      marketId,
+      1, // OracleTier.Admin
+      ethers.ZeroAddress,
+      0, // ComparisonType.GreaterThan (ignored for Admin tier)
+      0, // threshold (ignored for Admin tier)
+      expiry,
+    ]);
   }
 
   getProvider(): ethers.JsonRpcProvider {

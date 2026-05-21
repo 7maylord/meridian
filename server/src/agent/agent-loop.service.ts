@@ -51,7 +51,19 @@ export class AgentLoopService {
             continue;
           }
 
-          // Step 3: Decision engine
+          // Step 3: Duplicate check — skip if identical question already deployed
+          const existing = await this.marketRepo.findOne({
+            where: { question: structured.question },
+          });
+          if (existing) {
+            this.logger.log(
+              `Duplicate question skipped: "${structured.question}"`,
+            );
+            await this.news.markProcessed(article.id);
+            continue;
+          }
+
+          // Step 4: Decision engine
           const decision = await this.decisionEngine.evaluate(structured);
 
           if (!decision.deploy) {
@@ -59,13 +71,13 @@ export class AgentLoopService {
             continue;
           }
 
-          // Step 4: Deploy market on-chain
+          // Step 5: Deploy market on-chain
           const { marketId, txHash } = await this.marketFactory.deployMarket(
             structured,
             decision,
           );
 
-          // Step 5: Persist to database
+          // Step 6: Persist to database
           const market = this.marketRepo.create({
             question: structured.question,
             resolutionCriteria: structured.resolutionCriteria,
@@ -93,18 +105,18 @@ export class AgentLoopService {
           );
         } catch (err) {
           this.logger.error(
-            `Failed processing article "${article.title}": ${err.message}`,
+            `Failed processing article "${article.title}": ${(err as Error).message}`,
           );
           await this.news.markProcessed(article.id);
         }
-        
-        // Add a 5-second delay to avoid hitting Gemini free tier rate limits (15 RPM)
+
+        // Throttle to avoid Claude API rate limits between articles
         if (articles.length > 1) {
           await new Promise((resolve) => setTimeout(resolve, 5000));
         }
       }
     } catch (err) {
-      this.logger.error(`Agent loop error: ${err.message}`);
+      this.logger.error(`Agent loop error: ${(err as Error).message}`);
     } finally {
       this.isRunning = false;
       this.logger.log('=== Agent Loop Complete ===');

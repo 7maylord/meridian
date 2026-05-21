@@ -56,14 +56,37 @@ export class MarketFactoryService {
     const marketId = count - 1n;
     this.logger.log(`Created market ID: ${marketId.toString()}`);
 
-    // Step 2: Deploy capital from vault if deploy decision is true
+    // Step 2: Configure the oracle for admin-tier resolution at the same expiry
+    const oracleAddr = this.config.get<string>('contracts.resolutionOracle')!;
+    try {
+      const oracleCalldata = this.blockchain.encodeConfigureOracle(
+        marketId,
+        expiry,
+      );
+      const oracleTxId = await this.wallets.sendContractCall(
+        oracleAddr,
+        oracleCalldata,
+      );
+      await this.wallets.waitForTransaction(oracleTxId);
+      this.logger.log(`Oracle configured for market ${marketId}`);
+    } catch (err) {
+      this.logger.warn(
+        `Oracle configuration failed (market still live): ${(err as Error).message}`,
+      );
+    }
+
+    // Step 3: Deploy capital from vault if deploy decision is true
     if (decision.deploy && decision.stakeAmount > 0) {
       try {
         const isYes = decision.stakeSide === 'YES';
 
         // Get current price of outcome to calculate shares
         const registryContract = this.blockchain.getMarketRegistryContract();
-        const [yesPrice, noPrice] = await registryContract.getPrice(marketId);
+        const priceResult = (await registryContract.getPrice(marketId)) as [
+          bigint,
+          bigint,
+        ];
+        const [yesPrice, noPrice] = priceResult;
         const priceBps = isYes ? Number(yesPrice) : Number(noPrice);
         const safePriceBps = priceBps > 0 ? priceBps : 5000;
 
@@ -87,14 +110,16 @@ export class MarketFactoryService {
           deployCalldata,
         );
 
-        this.logger.log(`Vault deployment transaction submitted: ${deployTxId}`);
+        this.logger.log(
+          `Vault deployment transaction submitted: ${deployTxId}`,
+        );
         const deployTxHash = await this.wallets.waitForTransaction(deployTxId);
         this.logger.log(
           `Vault deployment transaction confirmed: ${deployTxHash}`,
         );
       } catch (err) {
         this.logger.warn(
-          `Capital deployment failed (market still created): ${err.message}`,
+          `Capital deployment failed (market still created): ${(err as Error).message}`,
         );
       }
     }
