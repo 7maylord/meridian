@@ -124,15 +124,16 @@ contract MeridianMarketTest is Test {
     function test_BuyYesShares() public {
         uint256 id = market.createMarket("Q?", "C", block.timestamp + 30 days, B_PARAM, address(usdc));
 
-        uint256 cost = market.getCost(id, true, 10 * ONE_SHARE);
-        assertTrue(cost > 0, "Cost should be > 0");
+        uint256 lmsrCost = market.getCost(id, true, 10 * ONE_SHARE);
+        assertTrue(lmsrCost > 0, "Cost should be > 0");
+        uint256 fee = (lmsrCost * market.builderFeeRate()) / 10_000;
 
         uint256 aliceBefore = usdc.balanceOf(alice);
         vm.prank(alice);
         market.buy(id, true, 10 * ONE_SHARE);
 
         uint256 aliceAfter = usdc.balanceOf(alice);
-        assertEq(aliceBefore - aliceAfter, cost, "Alice should pay the exact LMSR cost");
+        assertEq(aliceBefore - aliceAfter, lmsrCost + fee, "Alice pays LMSR cost + fee surcharge");
 
         (uint256 yesShares, uint256 noShares) = market.getUserPosition(id, alice);
         assertEq(yesShares, 10 * ONE_SHARE);
@@ -159,10 +160,7 @@ contract MeridianMarketTest is Test {
         vm.prank(bob);
         market.buy(id, false, 10 * ONE_SHARE);
 
-        (,,,,uint256 qYes, uint256 qNo,,,, ) = market.getMarket(id);
-
-        // Verify that the market's qYes/qNo are not accessed via getMarket correctly
-        // Use getUserPosition instead for individual positions
+        // Use getUserPosition for individual positions
         (uint256 aliceYes, ) = market.getUserPosition(id, alice);
         (, uint256 bobNo) = market.getUserPosition(id, bob);
         assertEq(aliceYes, 10 * ONE_SHARE);
@@ -472,6 +470,270 @@ contract MeridianMarketTest is Test {
         console.log("Alice payout (USDC):", alicePayout);
         assertTrue(alicePayout > 0, "Alice should profit");
 
+        vm.prank(bob);
+        vm.expectRevert("No winning shares");
+        market.claim(id);
+    }
+
+    // ─── Builder Fee Tests ───
+
+    function test_BuilderFeeCollectedOnBuy() public {
+        address collector = address(0xFEE);
+        market.setFeeCollector(collector);
+
+        uint256 id = market.createMarket("Q?", "C", block.timestamp + 30 days, B_PARAM, address(usdc));
+        uint256 grossCost = market.getCost(id, true, 10 * ONE_SHARE);
+        uint256 expectedFee = (grossCost * 50) / 10_000; // 0.5%
+
+        uint256 collectorBefore = usdc.balanceOf(collector);
+        vm.prank(alice);
+        market.buy(id, true, 10 * ONE_SHARE);
+
+        uint256 collectorAfter = usdc.balanceOf(collector);
+        assertEq(collectorAfter - collectorBefore, expectedFee, "Fee collector should receive 0.5% fee");
+    }
+
+    function test_TotalCollateralEqualsLmsrCost() public {
+        address collector = address(0xFEE);
+        market.setFeeCollector(collector);
+
+        uint256 id = market.createMarket("Q?", "C", block.timestamp + 30 days, B_PARAM, address(usdc));
+        uint256 lmsrCost = market.getCost(id, true, 10 * ONE_SHARE);
+
+        vm.prank(alice);
+        market.buy(id, true, 10 * ONE_SHARE);
+
+        (,,,,,,,,, uint256 totalCollateral) = market.getMarket(id);
+        // Fee is a surcharge paid directly to collector; pool gets the full LMSR cost
+        assertEq(totalCollateral, lmsrCost, "totalCollateral equals LMSR cost (fee is a separate surcharge)");
+    }
+
+    function test_SetBuilderFeeRateRevertsAbove500Bps() public {
+        vm.expectRevert("Max 5%");
+        market.setBuilderFeeRate(501);
+    }
+
+    function test_OnlyOwnerCanSetFeeCollector() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        market.setFeeCollector(alice);
+    }
+
+    function test_ZeroFeeWhenNoCollector() public {
+        // feeCollector is set to address(0) by default in this test (no setFeeCollector call)
+        // Deploy a fresh market instance with address(0) as initial fee collector
+        MeridianMarket freshMarket = new MeridianMarket(address(0));
+        freshMarket.setOracle(address(oracle));
+        freshMarket.addCollateral(address(usdc), 6);
+
+        // feeCollector defaults to msg.sender (owner) in constructor, not address(0)
+        // Set it explicitly to address(0)
+        freshMarket.setFeeCollector(address(0));
+
+        uint256 id = freshMarket.createMarket("Q?", "C", block.timestamp + 30 days, B_PARAM, address(usdc));
+        uint256 grossCost = freshMarket.getCost(id, true, 10 * ONE_SHARE);
+
+        vm.prank(alice);
+        usdc.approve(address(freshMarket), type(uint256).max);
+
+        uint256 aliceBefore = usdc.balanceOf(alice);
+        vm.prank(alice);
+        freshMarket.buy(id, true, 10 * ONE_SHARE);
+
+        // Alice still pays grossCost; fee goes nowhere (feeCollector == address(0))
+        assertEq(aliceBefore - usdc.balanceOf(alice), grossCost, "Alice pays full cost when no collector");
+    }
+
+    // ─── Sell Tests ───
+
+    function test_SellSharesReturnsFunds() public {
+        uint256 id = market.createMarket("Q?", "C", block.timestamp + 30 days, B_PARAM, address(usdc));
+
+        vm.prank(alice);
+        market.buy(id, true, 20 * ONE_SHARE);
+
+        uint256 aliceMid = usdc.balanceOf(alice);
+
+        // Sell half back
+        vm.prank(alice);
+        market.sell(id, true, 10 * ONE_SHARE);
+
+        uint256 aliceAfter = usdc.balanceOf(alice);
+        assertTrue(aliceAfter > aliceMid, "Alice should receive USDC on sell");
+
+        (uint256 yesShares,) = market.getUserPosition(id, alice);
+        assertEq(yesShares, 10 * ONE_SHARE, "Alice should have 10 shares remaining");
+    }
+
+    function test_SellReducesQYes() public {
+        uint256 id = market.createMarket("Q?", "C", block.timestamp + 30 days, B_PARAM, address(usdc));
+
+        vm.prank(alice);
+        market.buy(id, true, 20 * ONE_SHARE);
+
+        // getMarket returns: question, criteria, collateral, qYes, qNo, expiry, isResolved, outcome, creator, totalCollateral
+        (,,, uint256 qYesBefore,,,,,, ) = market.getMarket(id);
+
+        vm.prank(alice);
+        market.sell(id, true, 10 * ONE_SHARE);
+
+        (,,, uint256 qYesAfter,,,,,, ) = market.getMarket(id);
+        assertEq(qYesBefore - qYesAfter, 10 * ONE_SHARE, "qYes must decrease by sold shares");
+    }
+
+    function test_SellNoFee() public {
+        address collector = address(0xFEE);
+        market.setFeeCollector(collector);
+
+        uint256 id = market.createMarket("Q?", "C", block.timestamp + 30 days, B_PARAM, address(usdc));
+        vm.prank(alice);
+        market.buy(id, true, 20 * ONE_SHARE);
+
+        uint256 fullRefund = market.getSellRefund(id, true, 10 * ONE_SHARE);
+
+        uint256 collectorBefore = usdc.balanceOf(collector);
+        uint256 aliceBefore = usdc.balanceOf(alice);
+
+        vm.prank(alice);
+        market.sell(id, true, 10 * ONE_SHARE);
+
+        // Sell has no fee — buyer already paid at entry
+        assertEq(usdc.balanceOf(alice) - aliceBefore, fullRefund, "Full LMSR refund on sell (no fee)");
+        assertEq(usdc.balanceOf(collector) - collectorBefore, 0, "No sell fee");
+    }
+
+    function test_SellRevertsInsufficientShares() public {
+        uint256 id = market.createMarket("Q?", "C", block.timestamp + 30 days, B_PARAM, address(usdc));
+
+        vm.prank(alice);
+        market.buy(id, true, 5 * ONE_SHARE);
+
+        vm.prank(alice);
+        vm.expectRevert("Insufficient shares");
+        market.sell(id, true, 10 * ONE_SHARE);
+    }
+
+    function test_SellRevertsOnResolvedMarket() public {
+        uint256 id = market.createMarket("Q?", "C", block.timestamp + 30 days, B_PARAM, address(usdc));
+
+        vm.prank(alice);
+        market.buy(id, true, 10 * ONE_SHARE);
+
+        vm.prank(address(oracle));
+        market.resolve(id, true);
+
+        vm.prank(alice);
+        vm.expectRevert("Market already resolved");
+        market.sell(id, true, 5 * ONE_SHARE);
+    }
+
+    function test_SellRevertsAfterExpiry() public {
+        uint256 id = market.createMarket("Q?", "C", block.timestamp + 30 days, B_PARAM, address(usdc));
+
+        vm.prank(alice);
+        market.buy(id, true, 10 * ONE_SHARE);
+
+        vm.warp(block.timestamp + 31 days);
+
+        vm.prank(alice);
+        vm.expectRevert("Market expired");
+        market.sell(id, true, 5 * ONE_SHARE);
+    }
+
+    function test_BuyRevertsAfterExpiry() public {
+        uint256 id = market.createMarket("Q?", "C", block.timestamp + 30 days, B_PARAM, address(usdc));
+
+        vm.warp(block.timestamp + 31 days);
+
+        vm.prank(alice);
+        vm.expectRevert("Market expired");
+        market.buy(id, true, 10 * ONE_SHARE);
+    }
+
+    function test_PriceMovesAfterSell() public {
+        uint256 id = market.createMarket("Q?", "C", block.timestamp + 30 days, B_PARAM, address(usdc));
+
+        vm.prank(alice);
+        market.buy(id, true, 50 * ONE_SHARE);
+
+        (uint256 yesPriceHigh, ) = market.getPrice(id);
+
+        vm.prank(alice);
+        market.sell(id, true, 40 * ONE_SHARE);
+
+        (uint256 yesPriceLow, ) = market.getPrice(id);
+        assertTrue(yesPriceLow < yesPriceHigh, "YES price should drop after selling YES shares");
+    }
+
+    // ─── Claim Guard Tests ───
+
+    function test_ClaimRevertsWhenNoWinningShares() public {
+        uint256 id = market.createMarket("Q?", "C", block.timestamp + 30 days, B_PARAM, address(usdc));
+
+        vm.prank(alice);
+        market.buy(id, true, 10 * ONE_SHARE);
+
+        // Sell all shares — alice holds nothing
+        vm.prank(alice);
+        market.sell(id, true, 10 * ONE_SHARE);
+
+        vm.prank(address(oracle));
+        market.resolve(id, true);
+
+        // Alice has 0 shares, so claim reverts
+        vm.prank(alice);
+        vm.expectRevert("No winning shares");
+        market.claim(id);
+    }
+
+    function test_FullFlowWithFeesAndSell() public {
+        address collector = address(0xFEE);
+        market.setFeeCollector(collector);
+
+        // Capture collector balance BEFORE any trades
+        uint256 collectorStart = usdc.balanceOf(collector);
+
+        uint256 id = market.createMarket("Full flow?", "Resolves YES if true", block.timestamp + 30 days, B_PARAM, address(usdc));
+
+        // Agent buys YES (directional bet)
+        vm.prank(agent);
+        market.buy(id, true, 30 * ONE_SHARE);
+
+        // Alice buys YES
+        vm.prank(alice);
+        market.buy(id, true, 20 * ONE_SHARE);
+
+        // Bob buys NO (opposing bet)
+        vm.prank(bob);
+        market.buy(id, false, 25 * ONE_SHARE);
+
+        // Alice sells half her YES shares early
+        vm.prank(alice);
+        market.sell(id, true, 10 * ONE_SHARE);
+
+        // Fees should already be in collector from 4 trades above
+        assertTrue(usdc.balanceOf(collector) > collectorStart, "Fees collected from trades");
+
+        // Resolve YES
+        vm.prank(address(oracle));
+        market.resolve(id, true);
+
+        uint256 agentBefore = usdc.balanceOf(agent);
+        uint256 aliceBefore = usdc.balanceOf(alice);
+
+        vm.prank(agent);
+        market.claim(id);
+
+        vm.prank(alice);
+        market.claim(id);
+
+        uint256 agentPayout = usdc.balanceOf(agent) - agentBefore;
+        uint256 alicePayout = usdc.balanceOf(alice) - aliceBefore;
+
+        assertTrue(agentPayout > 0, "Agent profits from claim");
+        assertTrue(alicePayout > 0, "Alice profits from claim");
+
+        // Bob cannot claim (lost)
         vm.prank(bob);
         vm.expectRevert("No winning shares");
         market.claim(id);
