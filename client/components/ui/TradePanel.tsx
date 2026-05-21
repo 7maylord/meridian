@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { formatUSDC } from "@/lib/utils";
 import { ArrowRight, Wallet, Loader2 } from "lucide-react";
@@ -6,100 +8,132 @@ import { useReadContract, useWriteContract, useAccount, useWaitForTransactionRec
 import { MERIDIAN_MARKET_ABI, ERC20_ABI } from "@/lib/abis";
 import { CONFIG } from "@/lib/config";
 import { parseUnits } from "viem";
+import type { Abi } from "viem";
 
 interface TradePanelProps {
   marketId: number | string;
   pYes: number;
 }
 
+type Action = "buy-yes" | "buy-no" | "sell-yes" | "sell-no";
+
 export function TradePanel({ marketId, pYes }: TradePanelProps) {
-  const [side, setSide] = useState<"YES" | "NO">("YES");
+  const [action, setAction] = useState<Action>("buy-yes");
   const [amount, setAmount] = useState<string>("");
   const { isConnected, address } = useAccount();
 
+  const marketIdBig = BigInt(marketId);
   const numAmount = Number(amount) || 0;
-  // Convert standard USDC (6 decimals) to blockchain units
+  const isBuy = action === "buy-yes" || action === "buy-no";
+  const isYes = action === "buy-yes" || action === "sell-yes";
+
+  // Buy: estimate shares from amount / price
+  const price = isYes ? pYes : 1 - pYes;
+  const expectedShares = isBuy ? numAmount / price : 0;
+  const expectedSharesScaled = parseUnits(
+    isBuy ? expectedShares.toFixed(18) : "0",
+    18,
+  );
   const amountToApprove = parseUnits(amount || "0", 6);
-  // Estimate shares requested (simplified math; 18 decimals)
-  const expectedShares = numAmount / (side === "YES" ? pYes : 1 - pYes);
-  const expectedSharesScaled = parseUnits(expectedShares.toFixed(18), 18);
-  const potentialReturn = expectedShares - numAmount;
 
-  const registryAddress = CONFIG.contracts.marketFactory;
+  const registryAddress = CONFIG.contracts.marketFactory as `0x${string}`;
 
-  // Wagmi Hooks for real-time contract interactions
-  const { writeContract, data: hash, isPending: isTxPending } = useWriteContract();
-  
-  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ 
-    hash 
-  });
-
-  // Example: Check allowance
+  // USDC allowance check (buy only)
   const { data: allowance } = useReadContract({
     address: CONFIG.contracts.usdc as `0x${string}`,
-    abi: ERC20_ABI,
+    abi: ERC20_ABI as Abi,
     functionName: "allowance",
-    args: address ? [address, registryAddress as `0x${string}`] : undefined,
-    query: {
-      enabled: !!address,
-    }
+    args: address ? [address, registryAddress] : undefined,
+    query: { enabled: !!address && isBuy },
   });
 
-  const needsApproval = allowance !== undefined && (allowance as bigint) < amountToApprove;
+  // Sell: read on-chain refund estimate for the share amount the user inputs
+  const sellSharesScaled = parseUnits(amount || "0", 18);
+  const { data: sellRefundRaw } = useReadContract({
+    address: registryAddress,
+    abi: MERIDIAN_MARKET_ABI as Abi,
+    functionName: "getSellRefund",
+    args: [marketIdBig, isYes, sellSharesScaled],
+    query: {
+      enabled: !isBuy && numAmount > 0,
+    },
+  });
+  const sellRefund = sellRefundRaw ? Number(sellRefundRaw as bigint) / 1e6 : 0;
 
-  const handleTrade = async () => {
-    if (!amount || Number(amount) <= 0) return;
+  const needsApproval =
+    isBuy && allowance !== undefined && (allowance as bigint) < amountToApprove;
 
-    if (needsApproval) {
+  const { writeContract, data: hash, isPending: isTxPending } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess: isConfirmed } =
+    useWaitForTransactionReceipt({ hash });
+
+  const handleTrade = () => {
+    if (!amount || numAmount <= 0) return;
+
+    if (isBuy) {
+      if (needsApproval) {
+        writeContract({
+          address: CONFIG.contracts.usdc as `0x${string}`,
+          abi: ERC20_ABI as Abi,
+          functionName: "approve",
+          args: [registryAddress, amountToApprove],
+        });
+        return;
+      }
       writeContract({
-        address: CONFIG.contracts.usdc as `0x${string}`,
-        abi: ERC20_ABI,
-        functionName: "approve",
-        args: [registryAddress as `0x${string}`, amountToApprove],
+        address: registryAddress,
+        abi: MERIDIAN_MARKET_ABI as Abi,
+        functionName: "buy",
+        args: [marketIdBig, isYes, expectedSharesScaled],
       });
-      return;
+    } else {
+      writeContract({
+        address: registryAddress,
+        abi: MERIDIAN_MARKET_ABI as Abi,
+        functionName: "sell",
+        args: [marketIdBig, isYes, sellSharesScaled],
+      });
     }
-
-    writeContract({
-      address: registryAddress as `0x${string}`,
-      abi: MERIDIAN_MARKET_ABI,
-      functionName: "buy",
-      args: [BigInt(marketId), side === "YES", expectedSharesScaled],
-    });
   };
+
+  const tabs: { id: Action; label: string; activeClass: string }[] = [
+    { id: "buy-yes", label: "Buy YES", activeClass: "bg-primary text-primary-foreground" },
+    { id: "buy-no", label: "Buy NO", activeClass: "bg-red-500 text-white" },
+    { id: "sell-yes", label: "Sell YES", activeClass: "bg-orange-500 text-white" },
+    { id: "sell-no", label: "Sell NO", activeClass: "bg-orange-500 text-white" },
+  ];
 
   return (
     <div className="glass-panel p-6">
-      <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
-        Trade Shares
-      </h3>
+      <h3 className="text-lg font-semibold mb-6">Trade Shares</h3>
 
-      <div className="flex bg-black/20 rounded-lg p-1 mb-6">
-        <button
-          onClick={() => setSide("YES")}
-          className={cn(
-            "flex-1 py-2 rounded-md text-sm font-bold transition-all",
-            side === "YES" ? "bg-primary text-primary-foreground shadow-lg" : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          Buy YES
-        </button>
-        <button
-          onClick={() => setSide("NO")}
-          className={cn(
-            "flex-1 py-2 rounded-md text-sm font-bold transition-all",
-            side === "NO" ? "bg-red-500 text-white shadow-lg" : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          Buy NO
-        </button>
+      {/* Action tabs */}
+      <div className="grid grid-cols-4 bg-black/20 rounded-lg p-1 mb-6 gap-1">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => { setAction(t.id); setAmount(""); }}
+            className={cn(
+              "py-2 rounded-md text-xs font-bold transition-all",
+              action === t.id
+                ? t.activeClass + " shadow-lg"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       <div className="space-y-4 mb-6">
         <div>
-          <label className="text-xs text-muted-foreground font-medium mb-1.5 block">Amount (USDC)</label>
+          <label className="text-xs text-muted-foreground font-medium mb-1.5 block">
+            {isBuy ? "Amount (USDC)" : "Shares to sell"}
+          </label>
           <div className="relative">
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">$</div>
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">
+              {isBuy ? "$" : "#"}
+            </div>
             <input
               type="number"
               placeholder="0.00"
@@ -107,32 +141,45 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
               onChange={(e) => setAmount(e.target.value)}
               className="w-full bg-glass border border-glass-border rounded-xl pl-8 pr-16 py-3 focus:outline-none focus:ring-2 focus:ring-primary/50 text-lg font-medium"
             />
-            <button 
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-primary bg-primary/10 px-2 py-1 rounded"
-              onClick={() => setAmount("100")}
-            >
-              MAX
-            </button>
           </div>
         </div>
 
         <div className="bg-white/5 rounded-xl p-4 space-y-3">
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Expected Shares</span>
-            <span className="font-mono font-medium">{expectedShares.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Potential Return</span>
-            <span className="font-mono font-medium text-primary">+{formatUSDC(potentialReturn * 1e6)}</span>
-          </div>
-          <div className="flex justify-between text-sm pt-3 border-t border-white/10">
-            <span className="text-muted-foreground">Price Impact</span>
-            <span className="font-medium text-orange-400">{'< 0.1%'}</span>
-          </div>
+          {isBuy ? (
+            <>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Expected Shares</span>
+                <span className="font-mono font-medium">{expectedShares.toFixed(4)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Potential Return</span>
+                <span className="font-mono font-medium text-primary">
+                  +{formatUSDC((expectedShares - numAmount) * 1e6)}
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">USDC Refund</span>
+                <span className="font-mono font-medium text-primary">
+                  {numAmount > 0
+                    ? sellRefund > 0
+                      ? `$${sellRefund.toFixed(4)}`
+                      : "…"
+                    : "$0.00"}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm pt-3 border-t border-white/10">
+                <span className="text-muted-foreground">Sell fee</span>
+                <span className="text-primary font-medium">None</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      <button 
+      <button
         onClick={handleTrade}
         disabled={isTxPending || isConfirming || !isConnected}
         className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
@@ -146,18 +193,20 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
         ) : (
           <>
             <Wallet className="w-4 h-4" />
-            Place Trade
+            {isBuy ? "Place Trade" : "Sell Shares"}
             <ArrowRight className="w-4 h-4" />
           </>
         )}
       </button>
 
       {isConfirmed && (
-        <p className="text-center text-xs text-primary mt-2 font-medium">Transaction successful!</p>
+        <p className="text-center text-xs text-primary mt-2 font-medium">
+          Transaction confirmed!
+        </p>
       )}
 
       <p className="text-center text-xs text-muted-foreground mt-4">
-        Trades are executed via Circle Embedded Wallets on the Arc Testnet.
+        Trades settle on Arc Testnet via Circle Embedded Wallets.
       </p>
     </div>
   );

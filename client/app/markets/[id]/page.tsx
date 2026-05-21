@@ -10,12 +10,6 @@ import { PriceChart } from "@/components/ui/PriceChart";
 import { Globe2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
-// Mock chart data
-const mockChartData = Array.from({ length: 24 }).map((_, i) => ({
-  time: `${i}:00`,
-  price: 40 + Math.random() * 20 + (i * 0.5),
-}));
-
 export default function MarketDetailsPage() {
   const params = useParams();
   const id = params.id as string;
@@ -109,7 +103,7 @@ export default function MarketDetailsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Chart & Info */}
         <div className="lg:col-span-2 space-y-8">
-          <PriceChart data={mockChartData} />
+          <PriceChart marketId={market.marketId} />
           
           <AgentStake 
             confidence={Number(market.confidence)} 
