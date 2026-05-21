@@ -1,9 +1,10 @@
-import { Controller, Get, Param, Post, Body } from '@nestjs/common';
+import { Controller, Get, Param, Post, Body, UseGuards } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Market, MarketStatus } from '../markets/market.entity';
 import { BlockchainService } from '../blockchain/blockchain.service';
 import { WalletsService } from '../circle/wallets.service';
+import { NanopaymentGuard } from './nanopayment.guard';
 
 @Controller('api')
 export class ApiController {
@@ -80,5 +81,25 @@ export class ApiController {
   @Post('wallet/create')
   async createWallet() {
     return this.wallets.createWallet();
+  }
+
+  /**
+   * Premium endpoint: returns the agent's current probability estimate for a market.
+   * Requires a $0.01 USDC nanopayment — send tx hash in X-Payment-Tx header.
+   */
+  @Get('markets/:id/recommendation')
+  @UseGuards(NanopaymentGuard)
+  async getRecommendation(@Param('id') id: string) {
+    const market = await this.marketRepo.findOne({ where: { id } });
+    if (!market) return { error: 'Market not found' };
+
+    return {
+      marketId: market.marketId,
+      question: market.question,
+      agentPYes: market.pYes,
+      agentStakeSide: market.stakeSide,
+      confidence: market.confidence,
+      resolutionDeadline: market.resolutionDeadline,
+    };
   }
 }
