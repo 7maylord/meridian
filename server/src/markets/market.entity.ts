@@ -20,7 +20,7 @@ export class Market {
 
   @Column({ nullable: true })
   @Index()
-  contractAddress: string;
+  txHash: string;
 
   @Column({ type: 'int', nullable: true })
   @Index()

@@ -1,7 +1,7 @@
 import { Controller, Get, Param, Post, Body } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Market } from '../markets/market.entity';
+import { Market, MarketStatus } from '../markets/market.entity';
 import { BlockchainService } from '../blockchain/blockchain.service';
 import { WalletsService } from '../circle/wallets.service';
 
@@ -58,6 +58,23 @@ export class ApiController {
       totalMarketsCreated: totalMarkets,
       walletAddress: this.wallets.getAddress(),
     };
+  }
+
+  @Post('markets/:id/resolve')
+  async resolveMarket(
+    @Param('id') id: string,
+    @Body('outcome') outcome: boolean,
+  ) {
+    const market = await this.marketRepo.findOne({ where: { id } });
+    if (!market) {
+      throw new Error('Market not found');
+    }
+
+    market.status = MarketStatus.RESOLVED;
+    market.outcome = outcome;
+
+    await this.marketRepo.save(market);
+    return market;
   }
 
   @Post('wallet/create')

@@ -58,39 +58,45 @@ export class MarketFactoryService {
 
     // Step 2: Deploy capital from vault if deploy decision is true
     if (decision.deploy && decision.stakeAmount > 0) {
-      const isYes = decision.stakeSide === 'YES';
+      try {
+        const isYes = decision.stakeSide === 'YES';
 
-      // Get current price of outcome to calculate shares
-      const registryContract = this.blockchain.getMarketRegistryContract();
-      const [yesPrice, noPrice] = await registryContract.getPrice(marketId);
-      const priceBps = isYes ? Number(yesPrice) : Number(noPrice);
-      const safePriceBps = priceBps > 0 ? priceBps : 5000;
+        // Get current price of outcome to calculate shares
+        const registryContract = this.blockchain.getMarketRegistryContract();
+        const [yesPrice, noPrice] = await registryContract.getPrice(marketId);
+        const priceBps = isYes ? Number(yesPrice) : Number(noPrice);
+        const safePriceBps = priceBps > 0 ? priceBps : 5000;
 
-      // shares = (stakeAmount * 1e16) / priceBps
-      const stakeAmountBI = BigInt(decision.stakeAmount);
-      const shares =
-        (stakeAmountBI * 10000000000000000n) / BigInt(safePriceBps);
+        // shares = (stakeAmount * 1e16) / priceBps
+        const stakeAmountBI = BigInt(decision.stakeAmount);
+        const shares =
+          (stakeAmountBI * 10000000000000000n) / BigInt(safePriceBps);
 
-      const deployCalldata = this.blockchain.encodeVaultDeployCapital(
-        marketId,
-        isYes,
-        shares,
-      );
+        const deployCalldata = this.blockchain.encodeVaultDeployCapital(
+          marketId,
+          isYes,
+          shares,
+        );
 
-      this.logger.log(
-        `Deploying capital to market ID ${marketId}: side=${decision.stakeSide}, stakeAmount=${decision.stakeAmount}, shares=${shares.toString()}`,
-      );
+        this.logger.log(
+          `Deploying capital to market ID ${marketId}: side=${decision.stakeSide}, stakeAmount=${decision.stakeAmount}, shares=${shares.toString()}`,
+        );
 
-      const deployTxId = await this.wallets.sendContractCall(
-        vaultAddr,
-        deployCalldata,
-      );
+        const deployTxId = await this.wallets.sendContractCall(
+          vaultAddr,
+          deployCalldata,
+        );
 
-      this.logger.log(`Vault deployment transaction submitted: ${deployTxId}`);
-      const deployTxHash = await this.wallets.waitForTransaction(deployTxId);
-      this.logger.log(
-        `Vault deployment transaction confirmed: ${deployTxHash}`,
-      );
+        this.logger.log(`Vault deployment transaction submitted: ${deployTxId}`);
+        const deployTxHash = await this.wallets.waitForTransaction(deployTxId);
+        this.logger.log(
+          `Vault deployment transaction confirmed: ${deployTxHash}`,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Capital deployment failed (market still created): ${err.message}`,
+        );
+      }
     }
 
     return { marketId, txHash };

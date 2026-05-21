@@ -110,21 +110,18 @@ export class WalletsService implements OnModuleInit {
     if (!this.client) throw new Error('Circle client not initialized');
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const res = await this.client.getTransaction({ id: txId });
-        const tx = res.data?.transaction;
-        if (tx) {
-          this.logger.log(`Tx ${txId} state: ${tx.state}`);
-          if (tx.state === 'COMPLETE') {
-            return tx.txHash!;
-          } else if (tx.state === 'FAILED' || tx.state === 'CANCELLED') {
-            throw new Error(`Transaction ended in state: ${tx.state}`);
-          }
+      const res = await this.client.getTransaction({ id: txId });
+      const tx = res.data?.transaction;
+      if (tx) {
+        this.logger.log(`Tx ${txId} state: ${tx.state}`);
+        if (tx.state === 'COMPLETE') {
+          return tx.txHash!;
+        } else if (tx.state === 'FAILED' || tx.state === 'CANCELLED') {
+          this.logger.error(
+            `Transaction FAILED details: ${JSON.stringify(tx, null, 2)}`,
+          );
+          throw new Error(`Transaction ended in state: ${tx.state}`);
         }
-      } catch (err) {
-        this.logger.warn(
-          `Error polling tx status (attempt ${attempt}): ${err.message}`,
-        );
       }
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }

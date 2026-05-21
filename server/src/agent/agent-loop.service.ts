@@ -82,7 +82,7 @@ export class AgentLoopService {
             stakeSide: decision.stakeSide,
             articleId: article.id,
             marketId: Number(marketId),
-            contractAddress: txHash,
+            txHash: txHash,
           });
 
           await this.marketRepo.save(market);

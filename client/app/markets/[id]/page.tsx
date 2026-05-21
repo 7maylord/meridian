@@ -76,16 +76,31 @@ export default function MarketDetailsPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-6 pt-6 border-t border-glass-border">
             <ResolutionBadge tier={market.oracleTier} deadline={market.resolutionDeadline} />
-            <div className="text-sm">
-              <span className="text-muted-foreground">Contract: </span>
-              <a 
-                href={`${CONFIG.chain.explorerUrl}/address/${market.contractAddress}`}
-                target="_blank"
-                rel="noreferrer"
-                className="font-mono text-primary hover:underline"
-              >
-                {market.contractAddress ? `${market.contractAddress.slice(0, 6)}...${market.contractAddress.slice(-4)}` : 'Deploying...'}
-              </a>
+            <div className="flex items-center gap-6 text-sm">
+              <div>
+                <span className="text-muted-foreground">Registry: </span>
+                <a 
+                  href={`${CONFIG.chain.explorerUrl}/address/${CONFIG.contracts.marketFactory}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-primary hover:underline font-medium"
+                >
+                  {CONFIG.contracts.marketFactory.slice(0, 6)}...{CONFIG.contracts.marketFactory.slice(-4)}
+                </a>
+              </div>
+              {market.txHash && (
+                <div>
+                  <span className="text-muted-foreground">Tx: </span>
+                  <a 
+                    href={`${CONFIG.chain.explorerUrl}/tx/${market.txHash}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-mono text-primary hover:underline font-medium"
+                  >
+                    {market.txHash.slice(0, 6)}...{market.txHash.slice(-4)}
+                  </a>
+                </div>
+              )}
             </div>
           </div>
         </div>
