@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { formatUSDC } from "@/lib/utils";
 import { ArrowRight, Wallet, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useReadContract, useWriteContract, useAccount, useWaitForTransactionReceipt } from "wagmi";
@@ -37,6 +36,20 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
   const amountToApprove = parseUnits(amount || "0", 6);
 
   const registryAddress = CONFIG.contracts.marketFactory as `0x${string}`;
+
+  // Buy: real on-chain cost for the estimated share amount
+  const { data: buyCostRaw } = useReadContract({
+    address: registryAddress,
+    abi: MERIDIAN_MARKET_ABI as Abi,
+    functionName: "getCost",
+    args: [marketIdBig, isYes, expectedSharesScaled],
+    query: { enabled: isBuy && numAmount > 0 },
+  });
+  const buyCostUsdc = buyCostRaw ? Number(buyCostRaw as bigint) / 1e6 : 0;
+  const slippage =
+    buyCostUsdc > 0 && numAmount > 0
+      ? Math.abs((buyCostUsdc - numAmount) / numAmount) * 100
+      : 0;
 
   // USDC allowance check (buy only)
   const { data: allowance } = useReadContract({
@@ -152,9 +165,15 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
                 <span className="font-mono font-medium">{expectedShares.toFixed(4)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Potential Return</span>
-                <span className="font-mono font-medium text-primary">
-                  +{formatUSDC((expectedShares - numAmount) * 1e6)}
+                <span className="text-muted-foreground">Actual Cost</span>
+                <span className="font-mono font-medium">
+                  {numAmount > 0 ? (buyCostUsdc > 0 ? `$${buyCostUsdc.toFixed(4)}` : "…") : "$0.00"}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm pt-3 border-t border-white/10">
+                <span className="text-muted-foreground">Price Impact</span>
+                <span className={slippage > 1 ? "text-orange-400 font-medium" : "text-primary font-medium"}>
+                  {numAmount > 0 && buyCostUsdc > 0 ? `${slippage.toFixed(2)}%` : "—"}
                 </span>
               </div>
             </>
