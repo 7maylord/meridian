@@ -16,9 +16,13 @@ contract DeployMeridian is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
+        // Circle Programmable Wallet that operates the agent on-chain.
+        // Must differ from the deployer so the vault's onlyAgent modifier resolves correctly.
+        address agentWallet = vm.envAddress("AGENT_WALLET");
 
-        console.log("Deployer:", deployer);
-        console.log("Balance:", deployer.balance);
+        console.log("Deployer:     ", deployer);
+        console.log("Agent wallet: ", agentWallet);
+        console.log("Balance:      ", deployer.balance);
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -39,8 +43,8 @@ contract DeployMeridian is Script {
         market.addCollateral(ARC_EURC, 6);
         console.log("Registered USDC and EURC as collateral");
 
-        // 5. Deploy AgentVault (USDC collateral, USYC yield, Teller bridge, agent, market)
-        AgentVault vault = new AgentVault(ARC_USDC, ARC_USYC, ARC_TELLER, deployer, address(market));
+        // 5. Deploy AgentVault — agent is the Circle Programmable Wallet, not the deployer
+        AgentVault vault = new AgentVault(ARC_USDC, ARC_USYC, ARC_TELLER, agentWallet, address(market));
         console.log("AgentVault deployed at:", address(vault));
 
         vm.stopBroadcast();
@@ -54,6 +58,7 @@ contract DeployMeridian is Script {
         console.log("MeridianMarket:     ", address(market));
         console.log("ResolutionOracle:   ", address(oracle));
         console.log("AgentVault:         ", address(vault));
+        console.log("Agent wallet:       ", agentWallet);
         console.log("==========================\n");
     }
 }

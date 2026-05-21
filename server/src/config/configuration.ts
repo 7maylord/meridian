@@ -28,7 +28,16 @@ export default () => ({
     apiKey: process.env.ANTHROPIC_API_KEY,
   },
 
-
+  // ERC-8004 Agent Identity (Arc Testnet)
+  erc8004: {
+    identityRegistry: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
+    reputationRegistry: '0x8004B663056A597Dffe9eCcC1965A193B7388713',
+    validationRegistry: '0x8004Cb1BF31DAf7788923b405b754f57acEB4272',
+    agentId: process.env.ERC8004_AGENT_ID, // Set after first registration
+    metadataUri:
+      process.env.ERC8004_METADATA_URI ||
+      'ipfs://bafkreibdi6623n3xpf7ymk62ckb4bo75o3qemwkpfvp5i25j66itxvsoei',
+  },
 
   // Database (Supabase)
   database: {
