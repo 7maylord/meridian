@@ -6,9 +6,9 @@ Smart contracts for the Meridian prediction market protocol — deployed on [Arc
 
 | Contract | Address | Explorer Link |
 | :--- | :--- | :--- |
-| **MeridianMarket** | `0xc626eba3f91d97e9c94ca20cf1449e5857d4f082` | [View on Explorer](https://explorer.testnet.arc-node.thecanteenapp.com/address/0xc626eba3f91d97e9c94ca20cf1449e5857d4f082) |
-| **ResolutionOracle** | `0x98c021d2700d49ec5b3bf21011c85012e6c68ff6` | [View on Explorer](https://explorer.testnet.arc-node.thecanteenapp.com/address/0x98c021d2700d49ec5b3bf21011c85012e6c68ff6) |
-| **AgentVault** | `0xd37670aca0a61df9123713d7b21b3af9e15f7466` | [View on Explorer](https://explorer.testnet.arc-node.thecanteenapp.com/address/0xd37670aca0a61df9123713d7b21b3af9e15f7466) |
+| **MeridianMarket** | `0x90b9f05f1BD2f71463b2BbF2d433C8bA001bEB50` | [View on Explorer](https://explorer.testnet.arc-node.thecanteenapp.com/address/0x90b9f05f1BD2f71463b2BbF2d433C8bA001bEB50) |
+| **ResolutionOracle** | `0x27ff14E3E3580De92538427190A02da105B438A5` | [View on Explorer](https://explorer.testnet.arc-node.thecanteenapp.com/address/0x27ff14E3E3580De92538427190A02da105B438A5) |
+| **AgentVault** | `0x08bA64Ee4C58884B9cDd2917997Fd0B60D616519` | [View on Explorer](https://explorer.testnet.arc-node.thecanteenapp.com/address/0x08bA64Ee4C58884B9cDd2917997Fd0B60D616519) |
 
 ### External Dependencies (Arc Testnet)
 

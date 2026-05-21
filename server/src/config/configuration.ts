@@ -7,9 +7,9 @@ export default () => ({
 
   // Deployed Contracts
   contracts: {
-    resolutionOracle: '0x98c021d2700d49ec5b3bf21011c85012e6c68ff6',
-    marketFactory: '0xc626eba3f91d97e9c94ca20cf1449e5857d4f082',
-    agentVault: '0xd37670aca0a61df9123713d7b21b3af9e15f7466',
+    resolutionOracle: '0x27ff14E3E3580De92538427190A02da105B438A5',
+    marketFactory: '0x90b9f05f1BD2f71463b2BbF2d433C8bA001bEB50',
+    agentVault: '0x08bA64Ee4C58884B9cDd2917997Fd0B60D616519',
     usdc: '0x3600000000000000000000000000000000000000',
     eurc: '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a',
     usyc: '0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C',
