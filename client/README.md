@@ -1,36 +1,120 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Meridian Frontend
 
-## Getting Started
+Next.js 15 frontend for Meridian prediction markets. Connects to Arc testnet via Wagmi v3 + Privy, reads on-chain market state directly, and lets users trade YES/NO shares with real-time LMSR cost quotes.
 
-First, run the development server:
+## Pages
+
+| Route | Description |
+| :--- | :--- |
+| `/` | Market discovery — search by keyword, filter by vertical (central-bank, fx-direction, trade-policy) |
+| `/markets/[id]` | Market detail — live price chart (polls `getPrice()` every 2s), trade panel, agent stake info |
+| `/portfolio` | User positions — reads `getUserPosition()` on-chain for all markets, Claim button for resolved winners |
+| `/agent` | Agent stats — vault capital, win rate, calibration score |
+| `/admin` | Admin resolution panel |
+
+---
+
+## Components
+
+### `TradePanel`
+
+4-tab trade interface:
+- **Buy YES / Buy NO** — reads `getCost()` from chain for real LMSR cost; shows price impact
+- **Sell YES / Sell NO** — reads `getSellRefund()` from chain; no sell fee
+- Handles USDC approval if allowance is insufficient
+- Integrates with Privy embedded wallet or any injected wallet via Wagmi
+
+### `PriceChart`
+
+Live YES price chart. Polls `getPrice(marketId)` every 2 seconds via `useReadContract({ refetchInterval: 2000 })`. Maintains a 60-point rolling window (2 minutes). Built with Recharts.
+
+### `Portfolio Page`
+
+Batches `getUserPosition(marketId, address)` reads across all known markets using `useReadContracts` (multicall). Filters out zero balances. For resolved markets, shows WON/LOST badge and a Claim button that calls `claim(marketId)` on-chain.
+
+---
+
+## Contract Integration
+
+The client reads directly from Arc testnet — no backend proxy for on-chain state.
+
+**Contracts:**
+
+| Contract | Address |
+| :--- | :--- |
+| `MeridianMarket` | `0x90b9f05f1BD2f71463b2BbF2d433C8bA001bEB50` |
+| `ResolutionOracle` | `0x27ff14E3E3580De92538427190A02da105B438A5` |
+| `AgentVault` | `0x08bA64Ee4C58884B9cDd2917997Fd0B60D616519` |
+| `USDC` | `0x3600000000000000000000000000000000000000` |
+
+ABIs are sourced directly from Foundry build artifacts at `lib/abi/`.
+
+---
+
+## Setup
+
+### Install
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Environment Variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Create `client/.env.local`:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```env
+NEXT_PUBLIC_API_URL=http://localhost:3001/api
+NEXT_PUBLIC_ARC_RPC_URL=https://rpc.testnet.arc-node.thecanteenapp.com/v1/<key>
+```
 
-## Learn More
+### Run
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+pnpm dev       # http://localhost:3000
+pnpm build
+pnpm start
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Tech Stack
 
-## Deploy on Vercel
+| | |
+| :--- | :--- |
+| **Framework** | Next.js 15 (App Router) |
+| **Styling** | Tailwind CSS, custom glass-morphism design system |
+| **Chain reads** | Wagmi v3 + Viem |
+| **Wallet** | Privy (embedded + external wallets) |
+| **Data fetching** | TanStack React Query |
+| **Charts** | Recharts |
+| **Icons** | Lucide React |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Key Files
+
+| File | Purpose |
+| :--- | :--- |
+| `lib/config.ts` | Contract addresses + chain config |
+| `lib/abis.ts` | ABI imports (sourced from Foundry artifacts) |
+| `lib/abi/MeridianMarket.json` | Full ABI — update from `contracts/out/` after redeploy |
+| `app/providers.tsx` | Wagmi + Privy + React Query provider tree |
+| `components/ui/TradePanel.tsx` | Buy/Sell tabs with on-chain cost reads |
+| `components/ui/PriceChart.tsx` | Live polling price chart |
+| `app/portfolio/page.tsx` | On-chain position reader + claim UI |
+
+---
+
+## Updating ABIs After Redeploy
+
+After redeploying contracts, copy fresh ABIs from Foundry build output:
+
+```bash
+# From project root
+cp contracts/out/MeridianMarket.sol/MeridianMarket.json client/lib/abi/MeridianMarket.json
+cp contracts/out/AgentVault.sol/AgentVault.json client/lib/abi/AgentVault.json
+cp contracts/out/ResolutionOracle.sol/ResolutionOracle.json client/lib/abi/ResolutionOracle.json
+```
+
+Then update the addresses in `lib/config.ts`.

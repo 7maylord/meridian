@@ -42,9 +42,7 @@ export class TranslationService {
   /**
    * Translate and structure a news article into a prediction market.
    */
-  async structureArticle(
-    article: Article,
-  ): Promise<StructuredMarket | null> {
+  async structureArticle(article: Article): Promise<StructuredMarket | null> {
     if (!this.client) {
       this.logger.warn('Claude client not initialized');
       return null;
@@ -52,7 +50,7 @@ export class TranslationService {
 
     try {
       const message = await this.client.messages.create({
-        model: 'claude-sonnet-4-20250514',  // TODO: update when new model available
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 1024,
         system: buildSystemPrompt(),
         messages: [
@@ -67,7 +65,10 @@ export class TranslationService {
         message.content[0].type === 'text' ? message.content[0].text : '';
 
       // Strip markdown code fences if Claude wraps the JSON
-      const text = raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+      const text = raw
+        .replace(/^```(?:json)?\s*\n?/i, '')
+        .replace(/\n?```\s*$/i, '')
+        .trim();
       const parsed: StructuredMarket = JSON.parse(text);
 
       // Attach source metadata
@@ -85,7 +86,9 @@ export class TranslationService {
         parsed.resolutionDeadline = futureDate.toISOString();
       }
 
-      this.logger.log(`Structured: "${parsed.question}" (p=${parsed.pYes}, deadline=${parsed.resolutionDeadline})`);
+      this.logger.log(
+        `Structured: "${parsed.question}" (p=${parsed.pYes}, deadline=${parsed.resolutionDeadline})`,
+      );
       return parsed;
     } catch (err) {
       this.logger.error(
