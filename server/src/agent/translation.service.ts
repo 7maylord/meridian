@@ -22,6 +22,8 @@ Given a non-English news article (title + content), produce a JSON object with:
 
 CRITICAL: The resolutionDeadline MUST be AFTER ${today}. If the news event has already occurred, frame the question around official confirmation, data release, or follow-up actions that have not yet happened.
 
+If the article is not suitable for a financial prediction market (e.g. celebrity news, sports, entertainment, obituaries), output: {"skip": true}
+
 Only output valid JSON. Never include preamble or explanation.`;
 }
 
@@ -50,7 +52,7 @@ export class TranslationService {
 
     try {
       const message = await this.client.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 1024,
         system: buildSystemPrompt(),
         messages: [
@@ -58,18 +60,24 @@ export class TranslationService {
             role: 'user',
             content: `Source: ${article.sourceName} (${article.sourceLanguage})\nTitle: ${article.title}\nContent: ${article.content?.slice(0, 2000) || 'No content available'}`,
           },
+          { role: 'assistant', content: '{' },
         ],
       });
 
       const raw =
         message.content[0].type === 'text' ? message.content[0].text : '';
 
-      // Strip markdown code fences if Claude wraps the JSON
-      const text = raw
+      // Prepend the assistant prefill character and strip markdown fences
+      const text = ('{' + raw)
         .replace(/^```(?:json)?\s*\n?/i, '')
         .replace(/\n?```\s*$/i, '')
         .trim();
-      const parsed: StructuredMarket = JSON.parse(text);
+      const parsed = JSON.parse(text) as StructuredMarket & { skip?: boolean };
+
+      if (parsed.skip) {
+        this.logger.log(`Skipped non-financial article: "${article.title}"`);
+        return null;
+      }
 
       // Attach source metadata
       parsed.sourceLanguage = article.sourceLanguage;
