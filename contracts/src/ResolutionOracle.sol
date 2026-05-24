@@ -70,7 +70,7 @@ contract ResolutionOracle is Ownable {
         ComparisonType comparison,
         int256 threshold,
         uint256 expiry
-    ) external onlyOwner {
+    ) external onlyVerifier {
         require(!oracleConfigs[marketId].resolved, "Already resolved");
         require(expiry > block.timestamp, "Expiry in past");
 

@@ -7,7 +7,6 @@ import { StructuredMarket, DeploymentDecision } from './agent.types';
 export class DecisionEngineService {
   private readonly logger = new Logger(DecisionEngineService.name);
   private readonly minConfidence: number;
-  private readonly minLiquidity: number;
   private readonly defaultBParam: string;
 
   constructor(
@@ -15,7 +14,6 @@ export class DecisionEngineService {
     private readonly blockchain: BlockchainService,
   ) {
     this.minConfidence = this.config.get<number>('agent.minConfidence')!;
-    this.minLiquidity = this.config.get<number>('agent.minLiquidity')!;
     this.defaultBParam = this.config.get<string>('agent.defaultBParam')!;
   }
 
@@ -28,15 +26,15 @@ export class DecisionEngineService {
       return this.reject(`Confidence ${market.confidence} < ${this.minConfidence}`);
     }
 
-    // Gate 2: Vault has enough capital
+    // Gate 2: Vault has enough capital (disabled for demo)
     const availableCapital = await this.blockchain.getVaultCapital();
     const availableUSDC = Number(availableCapital) / 1e6;
 
-    if (availableUSDC < this.minLiquidity) {
-      return this.reject(
-        `Vault capital $${availableUSDC} < $${this.minLiquidity}`,
-      );
-    }
+    // if (availableUSDC < this.minLiquidity) {
+    //   return this.reject(
+    //     `Vault capital $${availableUSDC} < $${this.minLiquidity}`,
+    //   );
+    // }
 
     // Kelly fraction sizing
     const stakeSide = market.pYes >= 0.5 ? 'YES' : 'NO';

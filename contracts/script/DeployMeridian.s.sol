@@ -43,7 +43,12 @@ contract DeployMeridian is Script {
         market.addCollateral(ARC_EURC, 6);
         console.log("Registered USDC and EURC as collateral");
 
-        // 5. Deploy AgentVault — agent is the Circle Programmable Wallet, not the deployer
+        // 5. Authorize the agent wallet as a verifier on the oracle
+        //    (allows the agent to call configureOracle and resolveAdmin)
+        oracle.setVerifier(agentWallet, true);
+        console.log("Agent wallet authorized as oracle verifier");
+
+        // 6. Deploy AgentVault — agent is the Circle Programmable Wallet, not the deployer
         AgentVault vault = new AgentVault(ARC_USDC, ARC_USYC, ARC_TELLER, agentWallet, address(market));
         console.log("AgentVault deployed at:", address(vault));
 

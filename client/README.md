@@ -42,9 +42,9 @@ The client reads directly from Arc testnet — no backend proxy for on-chain sta
 
 | Contract | Address |
 | :--- | :--- |
-| `MeridianMarket` | `0x90b9f05f1BD2f71463b2BbF2d433C8bA001bEB50` |
-| `ResolutionOracle` | `0x27ff14E3E3580De92538427190A02da105B438A5` |
-| `AgentVault` | `0x08bA64Ee4C58884B9cDd2917997Fd0B60D616519` |
+| `MeridianMarket` | `0x2276EcD90c1E8A8939C70c8F70dcE69C3c2704f6` |
+| `ResolutionOracle` | `0x0bdE05DBFf1706586F5a499b4aA68A07E301ba0f` |
+| `AgentVault` | `0x31f85C18172BAA5d796Ff140D8dB4799bcF1a8BF` |
 | `USDC` | `0x3600000000000000000000000000000000000000` |
 
 ABIs are sourced directly from Foundry build artifacts at `lib/abi/`.

@@ -15,6 +15,11 @@ export class ApiController {
     private readonly wallets: WalletsService,
   ) {}
 
+  @Get()
+  root() {
+    return { status: 'ok', timestamp: new Date().toISOString() };
+  }
+
   @Get('health')
   health() {
     return {

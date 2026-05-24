@@ -60,18 +60,20 @@ export class TranslationService {
             role: 'user',
             content: `Source: ${article.sourceName} (${article.sourceLanguage})\nTitle: ${article.title}\nContent: ${article.content?.slice(0, 2000) || 'No content available'}`,
           },
-          { role: 'assistant', content: '{' },
         ],
       });
 
       const raw =
         message.content[0].type === 'text' ? message.content[0].text : '';
 
-      // Prepend the assistant prefill character and strip markdown fences
-      const text = ('{' + raw)
+      // Strip markdown fences, then extract first JSON object
+      const stripped = raw
         .replace(/^```(?:json)?\s*\n?/i, '')
         .replace(/\n?```\s*$/i, '')
         .trim();
+      const jsonMatch = stripped.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error(`No JSON in response: ${stripped.slice(0, 100)}`);
+      const text = jsonMatch[0];
       const parsed = JSON.parse(text) as StructuredMarket & { skip?: boolean };
 
       if (parsed.skip) {
