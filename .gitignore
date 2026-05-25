@@ -1,7 +1,4 @@
-rpc.md
-implementation.md
 
-/test
 # Environment variables
 .env
 .env.local
@@ -17,6 +14,11 @@ yarn-error.log*
 dist/
 build/
 out/
+
+rpc.md
+implementation.md
+meridian-prd-trd.md
+/test
 
 # Foundry
 cache/

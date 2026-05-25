@@ -43,8 +43,7 @@ contract DeployMeridian is Script {
         market.addCollateral(ARC_EURC, 6);
         console.log("Registered USDC and EURC as collateral");
 
-        // 5. Authorize the agent wallet as a verifier on the oracle
-        //    (allows the agent to call configureOracle and resolveAdmin)
+        // 5. Authorize the agent wallet as a verifier on the oracle   (allows the agent to call configureOracle and resolveAdmin)
         oracle.setVerifier(agentWallet, true);
         console.log("Agent wallet authorized as oracle verifier");
 
