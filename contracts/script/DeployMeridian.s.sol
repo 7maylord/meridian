@@ -49,7 +49,10 @@ contract DeployMeridian is Script {
         console.log("Agent wallet authorized as oracle verifier");
 
         // 6. Deploy AgentVault — agent is the Circle Programmable Wallet, not the deployer
-        AgentVault vault = new AgentVault(ARC_USDC, ARC_USYC, ARC_TELLER, agentWallet, address(market));
+        //    Pass EURC as extra collateral so the vault can buy EURC-denominated markets.
+        address[] memory extraCollateral = new address[](1);
+        extraCollateral[0] = ARC_EURC;
+        AgentVault vault = new AgentVault(ARC_USDC, ARC_USYC, ARC_TELLER, agentWallet, address(market), extraCollateral);
         console.log("AgentVault deployed at:", address(vault));
 
         vm.stopBroadcast();

@@ -3,14 +3,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { usePrivy } from "@privy-io/react-auth";
-import {
-  useReadContract,
-  useWriteContract,
-  useWaitForTransactionReceipt,
-} from "wagmi";
+import { useReadContract, useWriteContract } from "wagmi";
 import { CONFIG } from "@/lib/config";
 import { RESOLUTION_ORACLE_ABI } from "@/lib/abis";
 import { ShieldAlert, ShieldCheck, Loader2, Check, X } from "lucide-react";
+import { toast } from "sonner";
 
 interface MarketEntry {
   id: string;
@@ -66,11 +63,11 @@ export default function AdminResolutionPage() {
   const { writeContractAsync } = useWriteContract();
 
   const handleResolve = async (market: MarketEntry, marketOutcome: boolean) => {
+    const toastId = toast.loading(`Resolving market #${market.marketId} as ${marketOutcome ? "YES" : "NO"}...`);
     try {
       setResolvingId(market.id);
       setOutcome(marketOutcome);
 
-      // 1. On-chain resolution
       const hash = await writeContractAsync({
         address: CONFIG.contracts.resolutionOracle as `0x${string}`,
         abi: RESOLUTION_ORACLE_ABI,
@@ -78,10 +75,10 @@ export default function AdminResolutionPage() {
         args: [BigInt(market.marketId), marketOutcome],
       });
 
-      // Simple wait (in a production app, use useWaitForTransactionReceipt effectively)
-      console.log("Transaction submitted:", hash);
+      toast.loading("Waiting for confirmation...", { id: toastId });
+      // eslint-disable-next-line no-console
+      console.log("Resolution tx:", hash);
 
-      // 2. Sync with backend API
       const res = await fetch(
         `${CONFIG.apiBaseUrl}/markets/${market.id}/resolve`,
         {
@@ -93,11 +90,11 @@ export default function AdminResolutionPage() {
 
       if (!res.ok) throw new Error("Failed to sync resolution with backend");
 
-      // Refetch markets
+      toast.success(`Market #${market.marketId} resolved as ${marketOutcome ? "YES" : "NO"}`, { id: toastId });
       await refetch();
     } catch (err) {
-      console.error("Resolution failed:", err);
-      alert("Failed to resolve market. Check console for details.");
+      const message = err instanceof Error ? err.message.split("\n")[0] : "Unknown error";
+      toast.error(`Resolution failed: ${message}`, { id: toastId });
     } finally {
       setResolvingId(null);
     }

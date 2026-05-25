@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { ArrowRight, Wallet, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useReadContract, useWriteContract, useAccount, useWaitForTransactionReceipt } from "wagmi";
+import { useReadContract, useWriteContract, useAccount, useConfig } from "wagmi";
+import { waitForTransactionReceipt } from "@wagmi/core";
 import { MERIDIAN_MARKET_ABI, ERC20_ABI } from "@/lib/abis";
 import { CONFIG } from "@/lib/config";
-import { parseUnits } from "viem";
+import { parseUnits, maxUint256 } from "viem";
 import type { Abi } from "viem";
+import { toast } from "sonner";
 
 interface TradePanelProps {
   marketId: number | string;
@@ -19,14 +21,17 @@ type Action = "buy-yes" | "buy-no" | "sell-yes" | "sell-no";
 export function TradePanel({ marketId, pYes }: TradePanelProps) {
   const [action, setAction] = useState<Action>("buy-yes");
   const [amount, setAmount] = useState<string>("");
+  const [isProcessing, setIsProcessing] = useState(false);
+
   const { isConnected, address } = useAccount();
+  const config = useConfig();
+  const { writeContractAsync } = useWriteContract();
 
   const marketIdBig = BigInt(marketId);
   const numAmount = Number(amount) || 0;
   const isBuy = action === "buy-yes" || action === "buy-no";
   const isYes = action === "buy-yes" || action === "sell-yes";
 
-  // Buy: estimate shares from amount / price
   const price = isYes ? pYes : 1 - pYes;
   const expectedShares = isBuy ? numAmount / price : 0;
   const expectedSharesScaled = parseUnits(
@@ -36,7 +41,6 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
 
   const registryAddress = CONFIG.contracts.marketFactory as `0x${string}`;
 
-  // Buy: real on-chain cost for the estimated share amount
   const { data: buyCostRaw } = useReadContract({
     address: registryAddress,
     abi: MERIDIAN_MARKET_ABI as Abi,
@@ -45,20 +49,18 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
     query: { enabled: isBuy && numAmount > 0 },
   });
   const buyCostUsdc = buyCostRaw ? Number(buyCostRaw as bigint) / 1e6 : 0;
-
-  // Approval must cover lmsrCost + 0.5% builder fee (two separate transferFrom calls).
-  // Use the on-chain cost when available; fall back to the input amount estimate.
-  const exactCost: bigint = buyCostRaw
-    ? (buyCostRaw as bigint)
-    : parseUnits(amount || "0", 6);
-  const amountToApprove = exactCost * BigInt(10100) / BigInt(10000); // 1% covers fee (0.5%) + slippage
   const slippage =
     buyCostUsdc > 0 && numAmount > 0
       ? Math.abs((buyCostUsdc - numAmount) / numAmount) * 100
       : 0;
 
-  // USDC allowance check (buy only)
-  const { data: allowance } = useReadContract({
+  // Minimum allowance needed: on-chain cost + 1% buffer for fee + slippage
+  const exactCost: bigint = buyCostRaw
+    ? (buyCostRaw as bigint)
+    : parseUnits(amount || "0", 6);
+  const minAllowanceNeeded = exactCost * BigInt(10100) / BigInt(10000);
+
+  const { data: allowance, isLoading: allowanceLoading } = useReadContract({
     address: CONFIG.contracts.usdc as `0x${string}`,
     abi: ERC20_ABI as Abi,
     functionName: "allowance",
@@ -66,52 +68,69 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
     query: { enabled: !!address && isBuy },
   });
 
-  // Sell: read on-chain refund estimate for the share amount the user inputs
   const sellSharesScaled = parseUnits(amount || "0", 18);
   const { data: sellRefundRaw } = useReadContract({
     address: registryAddress,
     abi: MERIDIAN_MARKET_ABI as Abi,
     functionName: "getSellRefund",
     args: [marketIdBig, isYes, sellSharesScaled],
-    query: {
-      enabled: !isBuy && numAmount > 0,
-    },
+    query: { enabled: !isBuy && numAmount > 0 },
   });
   const sellRefund = sellRefundRaw ? Number(sellRefundRaw as bigint) / 1e6 : 0;
 
-  const needsApproval =
-    isBuy && allowance !== undefined && (allowance as bigint) < amountToApprove;
+  const handleTrade = async () => {
+    if (!amount || numAmount <= 0 || isProcessing) return;
 
-  const { writeContract, data: hash, isPending: isTxPending } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess: isConfirmed } =
-    useWaitForTransactionReceipt({ hash });
+    setIsProcessing(true);
+    try {
+      if (isBuy) {
+        const currentAllowance = allowance !== undefined ? (allowance as bigint) : BigInt(0);
 
-  const handleTrade = () => {
-    if (!amount || numAmount <= 0) return;
+        // Approve if allowance is insufficient
+        if (currentAllowance < minAllowanceNeeded) {
+          const approveToastId = toast.loading("Approving USDC...");
+          const approvalHash = await writeContractAsync({
+            address: CONFIG.contracts.usdc as `0x${string}`,
+            abi: ERC20_ABI as Abi,
+            functionName: "approve",
+            args: [registryAddress, maxUint256],
+          });
+          toast.loading("Waiting for approval...", { id: approveToastId });
+          await waitForTransactionReceipt(config, { hash: approvalHash });
+          toast.success("USDC approved!", { id: approveToastId });
+        }
 
-    if (isBuy) {
-      if (needsApproval) {
-        writeContract({
-          address: CONFIG.contracts.usdc as `0x${string}`,
-          abi: ERC20_ABI as Abi,
-          functionName: "approve",
-          args: [registryAddress, amountToApprove],
+        // Buy
+        const buyToastId = toast.loading("Submitting trade...");
+        const buyHash = await writeContractAsync({
+          address: registryAddress,
+          abi: MERIDIAN_MARKET_ABI as Abi,
+          functionName: "buy",
+          args: [marketIdBig, isYes, expectedSharesScaled],
         });
-        return;
+        toast.loading("Waiting for confirmation...", { id: buyToastId });
+        await waitForTransactionReceipt(config, { hash: buyHash });
+        toast.success("Trade confirmed!", { id: buyToastId });
+        setAmount("");
+      } else {
+        // Sell
+        const sellToastId = toast.loading("Submitting sell...");
+        const sellHash = await writeContractAsync({
+          address: registryAddress,
+          abi: MERIDIAN_MARKET_ABI as Abi,
+          functionName: "sell",
+          args: [marketIdBig, isYes, sellSharesScaled],
+        });
+        toast.loading("Waiting for confirmation...", { id: sellToastId });
+        await waitForTransactionReceipt(config, { hash: sellHash });
+        toast.success("Shares sold!", { id: sellToastId });
+        setAmount("");
       }
-      writeContract({
-        address: registryAddress,
-        abi: MERIDIAN_MARKET_ABI as Abi,
-        functionName: "buy",
-        args: [marketIdBig, isYes, expectedSharesScaled],
-      });
-    } else {
-      writeContract({
-        address: registryAddress,
-        abi: MERIDIAN_MARKET_ABI as Abi,
-        functionName: "sell",
-        args: [marketIdBig, isYes, sellSharesScaled],
-      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message.split("\n")[0] : "Transaction failed";
+      toast.error(message);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -122,11 +141,12 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
     { id: "sell-no", label: "Sell NO", activeClass: "bg-orange-500 text-white" },
   ];
 
+  const isLoading = isProcessing || (isBuy && allowanceLoading);
+
   return (
     <div className="glass-panel p-6">
       <h3 className="text-lg font-semibold mb-6">Trade Shares</h3>
 
-      {/* Action tabs */}
       <div className="grid grid-cols-4 bg-black/20 rounded-lg p-1 mb-6 gap-1">
         {tabs.map((t) => (
           <button
@@ -206,15 +226,13 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
 
       <button
         onClick={handleTrade}
-        disabled={isTxPending || isConfirming || !isConnected}
+        disabled={isLoading || !isConnected}
         className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {!isConnected ? (
           <>Connect Wallet to Trade</>
-        ) : isTxPending || isConfirming ? (
+        ) : isLoading ? (
           <><Loader2 className="w-4 h-4 animate-spin" /> Processing...</>
-        ) : needsApproval ? (
-          <>Approve USDC <ArrowRight className="w-4 h-4" /></>
         ) : (
           <>
             <Wallet className="w-4 h-4" />
@@ -223,12 +241,6 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
           </>
         )}
       </button>
-
-      {isConfirmed && (
-        <p className="text-center text-xs text-primary mt-2 font-medium">
-          Transaction confirmed!
-        </p>
-      )}
 
       <p className="text-center text-xs text-muted-foreground mt-4">
         Trades settle on Arc Testnet via Circle Embedded Wallets.

@@ -87,7 +87,8 @@ contract AgentVault is Ownable {
         address _usycToken,
         address _teller,
         address _agent,
-        address _meridianMarket
+        address _meridianMarket,
+        address[] memory _extraCollateral
     ) Ownable(msg.sender) {
         collateralToken = IERC20(_collateralToken);
         usycToken = IERC20(_usycToken);
@@ -95,8 +96,21 @@ contract AgentVault is Ownable {
         agent = _agent;
         meridianMarket = IMeridianMarketVault(_meridianMarket);
 
-        // Pre-approve the MeridianMarket contract to pull USDC
+        // Pre-approve the MeridianMarket contract to pull primary collateral
         IERC20(_collateralToken).approve(_meridianMarket, type(uint256).max);
+
+        // Pre-approve additional collateral tokens (e.g. EURC for European markets)
+        for (uint256 i = 0; i < _extraCollateral.length; i++) {
+            IERC20(_extraCollateral[i]).approve(_meridianMarket, type(uint256).max);
+        }
+    }
+
+    /**
+     * @dev Approve an additional collateral token for MeridianMarket spending.
+     *      Use when new collateral types are added to MeridianMarket.
+     */
+    function approveCollateral(address token) external onlyOwner {
+        IERC20(token).approve(address(meridianMarket), type(uint256).max);
     }
 
     // ──────────────────────────────────────────────

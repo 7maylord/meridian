@@ -7,7 +7,8 @@ import type { Abi } from "viem";
 import { CONFIG } from "@/lib/config";
 import { MERIDIAN_MARKET_ABI } from "@/lib/abis";
 import { Wallet, History, AlertCircle, Loader2, TrendingUp, TrendingDown } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { toast } from "sonner";
 
 interface ApiMarket {
   id: string;
@@ -31,10 +32,25 @@ export default function PortfolioPage() {
   const isConnected = ready && authenticated && !!address;
 
   const [claimingId, setClaimingId] = useState<number | null>(null);
+  const claimToastRef = useRef<string | number | undefined>(undefined);
 
   const { writeContract, data: claimHash } = useWriteContract();
   const { isLoading: isClaimConfirming, isSuccess: isClaimConfirmed } =
     useWaitForTransactionReceipt({ hash: claimHash });
+
+  useEffect(() => {
+    if (isClaimConfirming && claimToastRef.current !== undefined) {
+      toast.loading("Waiting for confirmation...", { id: claimToastRef.current });
+    }
+  }, [isClaimConfirming]);
+
+  useEffect(() => {
+    if (isClaimConfirmed && claimToastRef.current !== undefined) {
+      toast.success("Winnings claimed!", { id: claimToastRef.current });
+      claimToastRef.current = undefined;
+      setClaimingId(null);
+    }
+  }, [isClaimConfirmed]);
 
   // 1. Fetch all markets from backend
   const { data: markets = [] } = useQuery<ApiMarket[]>({
@@ -80,12 +96,22 @@ export default function PortfolioPage() {
 
   const handleClaim = (marketId: number) => {
     setClaimingId(marketId);
-    writeContract({
-      address: CONFIG.contracts.marketFactory as `0x${string}`,
-      abi: MERIDIAN_MARKET_ABI,
-      functionName: "claim",
-      args: [BigInt(marketId)],
-    });
+    claimToastRef.current = toast.loading("Claiming winnings...");
+    writeContract(
+      {
+        address: CONFIG.contracts.marketFactory as `0x${string}`,
+        abi: MERIDIAN_MARKET_ABI,
+        functionName: "claim",
+        args: [BigInt(marketId)],
+      },
+      {
+        onError: (err) => {
+          toast.error(`Claim failed: ${err.message.split("\n")[0]}`, { id: claimToastRef.current });
+          claimToastRef.current = undefined;
+          setClaimingId(null);
+        },
+      },
+    );
   };
 
   const userWon = (p: Position): boolean => {
@@ -133,12 +159,6 @@ export default function PortfolioPage() {
           </div>
         </div>
       </div>
-
-      {isClaimConfirmed && (
-        <div className="bg-primary/10 border border-primary/30 rounded-xl px-4 py-3 text-primary text-sm font-medium">
-          Winnings claimed successfully!
-        </div>
-      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Active Positions */}
