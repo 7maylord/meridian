@@ -32,6 +32,9 @@ import { ApiModule } from './api/api.module';
         entities: [Article, Market],
         synchronize: true, // Auto-create tables (dev only)
         ssl: { rejectUnauthorized: false },
+        extra: {
+          max: 3, // limit pool size per server instance
+        },
       }),
     }),
 
