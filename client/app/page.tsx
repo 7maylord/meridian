@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MarketCard, MarketCardProps } from "@/components/ui/MarketCard";
 import { CONFIG } from "@/lib/config";
@@ -16,6 +16,23 @@ export default function MarketDiscoveryPage() {
   const [search, setSearch] = useState("");
   const [vertical, setVertical] = useState<Vertical>("all");
   const [copied, setCopied] = useState(false);
+  const [serverReady, setServerReady] = useState(false);
+  const [warmupSecondsLeft, setWarmupSecondsLeft] = useState(30);
+
+  useEffect(() => {
+    fetch(`${CONFIG.apiBaseUrl}/health`).catch(() => {});
+    const tick = setInterval(() => {
+      setWarmupSecondsLeft((s) => {
+        if (s <= 1) {
+          clearInterval(tick);
+          setServerReady(true);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(tick);
+  }, []);
 
   const copyEndpoint = useCallback(() => {
     navigator.clipboard.writeText(X402_ENDPOINT);
@@ -25,6 +42,7 @@ export default function MarketDiscoveryPage() {
 
   const { data: markets, isLoading } = useQuery({
     queryKey: ["markets"],
+    enabled: serverReady,
     queryFn: async () => {
       const res = await fetch(`${CONFIG.apiBaseUrl}/markets`);
       if (!res.ok) throw new Error("Failed to fetch markets");
@@ -224,7 +242,15 @@ export default function MarketDiscoveryPage() {
       )}
 
       {/* Grid */}
-      {isLoading ? (
+      {!serverReady ? (
+        <div className="text-center py-20 glass-panel space-y-3">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-sm text-muted-foreground">
+            Waking up server<span className="animate-pulse">...</span>
+          </p>
+          <p className="text-xs text-muted-foreground/50 font-mono">{warmupSecondsLeft}s</p>
+        </div>
+      ) : isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <div key={i} className="glass-panel h-[300px]" />
