@@ -9,7 +9,7 @@
   --color-border: var(--border);
   --color-glass: var(--glass);
   --color-glass-border: var(--glass-border);
-  --font-sans: var(--font-inter);
+  --font-sans: var(--font-space-grotesk);
 }
 
 :root {

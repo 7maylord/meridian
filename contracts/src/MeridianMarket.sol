@@ -5,63 +5,37 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import {SD59x18, sd, unwrap} from "prb-math/SD59x18.sol";
 
-/**
- * @title MeridianMarket
- * @dev Single-contract prediction market registry using LMSR pricing.
- *      All markets live in one contract via a mapping, avoiding per-market deployments.
- *      Positions are tracked as internal balances (no ERC20 outcome tokens).
- *
- *      Payout model (pro-rata / parimutuel):
- *        payout = (userWinningShares / totalWinningShares) * totalCollateral
- *
- *      totalCollateral accumulates net trading costs from all buy() calls and
- *      decreases on sell(). At resolution the full pool is distributed to winning
- *      share holders proportionally — losers' capital flows to winners.
- *      The LMSR pricing formula determines entry cost; it does not guarantee a
- *      fixed $1 redemption per share. Actual payout per share will be greater than
- *      cost-per-share when the losing side had significant volume, and approximately
- *      equal to cost-per-share in a one-sided market (no arb profit available).
- */
 contract MeridianMarket is Ownable {
-    // ─── Market Structure ───
-
     struct Market {
         string question;
         string resolutionCriteria;
         address collateralToken;
         uint8 collateralDecimals;
-        uint256 b;               // LMSR liquidity parameter (18-decimal scale)
-        uint256 qYes;            // Total YES shares outstanding (18-decimal scale)
-        uint256 qNo;             // Total NO shares outstanding (18-decimal scale)
-        uint256 expiry;          // Unix timestamp
+        uint256 b;
+        uint256 qYes;
+        uint256 qNo;
+        uint256 expiry;
         bool isResolved;
-        bool outcome;            // true = YES wins, false = NO wins
+        bool outcome;
         address creator;
-        uint256 totalCollateral; // Net collateral held (after fees extracted)
+        uint256 totalCollateral;
     }
-
-    // ─── State ───
 
     uint256 public marketCount;
     mapping(uint256 => Market) public markets;
 
-    // Positions: marketId => user => share balance (18-decimal scale)
     mapping(uint256 => mapping(address => uint256)) public yesBalances;
     mapping(uint256 => mapping(address => uint256)) public noBalances;
 
-    // Oracle & collateral config
     address public oracle;
     mapping(address => bool) public supportedCollateral;
     mapping(address => uint8) public collateralDecimals;
 
-    // Builder fee: taken on every buy and sell, sent to feeCollector
-    uint16 public builderFeeRate = 50;   // basis points — 50 bps = 0.5%
+    uint16 public builderFeeRate = 50;
     address public feeCollector;
 
     uint256 internal constant INTERNAL_DECIMALS = 18;
     uint256 internal constant BPS_DENOM = 10_000;
-
-    // ─── Events ───
 
     event MarketCreated(
         uint256 indexed marketId,
@@ -95,14 +69,10 @@ contract MeridianMarket is Ownable {
     event FeeCollectorSet(address indexed feeCollector);
     event BuilderFeeRateSet(uint16 newRate);
 
-    // ─── Constructor ───
-
     constructor(address _oracle) Ownable(msg.sender) {
         oracle = _oracle;
-        feeCollector = msg.sender; // owner collects fees until explicitly changed
+        feeCollector = msg.sender;
     }
-
-    // ─── Admin ───
 
     function addCollateral(address token, uint8 decimals) external onlyOwner {
         supportedCollateral[token] = true;
@@ -129,8 +99,6 @@ contract MeridianMarket is Ownable {
         builderFeeRate = _rate;
         emit BuilderFeeRateSet(_rate);
     }
-
-    // ─── Market Creation ───
 
     function createMarket(
         string calldata question,
@@ -164,8 +132,6 @@ contract MeridianMarket is Ownable {
         emit MarketCreated(marketId, question, resolutionCriteria, expiry, initialB, collateral, msg.sender);
     }
 
-    // ─── Scaling Helpers ───
-
     function _scaleUp(uint256 amount, uint8 _decimals) internal pure returns (uint256) {
         if (_decimals >= INTERNAL_DECIMALS) return amount;
         return amount * (10 ** (INTERNAL_DECIMALS - _decimals));
@@ -175,8 +141,6 @@ contract MeridianMarket is Ownable {
         if (_decimals >= INTERNAL_DECIMALS) return amount;
         return amount / (10 ** (INTERNAL_DECIMALS - _decimals));
     }
-
-    // ─── LMSR Math (all internal 18-decimal scale) ───
 
     function costFunction(uint256 _qYes, uint256 _qNo, uint256 _b) public pure returns (uint256) {
         SD59x18 qYesSd = sd(int256(_qYes));
@@ -206,10 +170,6 @@ contract MeridianMarket is Ownable {
         return _scaleDown(internalCost, m.collateralDecimals);
     }
 
-    /**
-     * @dev LMSR sell refund (before fee): cost decreases when shares are removed.
-     *      refund = C(q) - C(q - shares)
-     */
     function getSellRefundInternal(uint256 marketId, bool isYes, uint256 shares) public view returns (uint256) {
         Market storage m = markets[marketId];
         require(isYes ? m.qYes >= shares : m.qNo >= shares, "Shares exceed supply");
@@ -226,17 +186,6 @@ contract MeridianMarket is Ownable {
         return _scaleDown(internalRefund, m.collateralDecimals);
     }
 
-    // ─── Trading ───
-
-    /**
-     * @dev Buy shares. The builder fee is charged as a surcharge on top of the LMSR cost,
-     *      paid directly from the buyer to feeCollector. The pool receives exactly the LMSR
-     *      cost, keeping pool accounting consistent with the cost function.
-     *
-     *      User pays: lmsrCost + fee = lmsrCost × (1 + builderFeeRate/10000)
-     *      Pool receives: lmsrCost (unchanged for LMSR math)
-     *      Collector receives: fee
-     */
     function buy(uint256 marketId, bool isYes, uint256 shares) external {
         Market storage m = markets[marketId];
         require(m.b > 0, "Market does not exist");
@@ -248,13 +197,11 @@ contract MeridianMarket is Ownable {
 
         uint256 fee = (lmsrCost * builderFeeRate) / BPS_DENOM;
 
-        // Pool receives the raw LMSR cost
         require(
             IERC20(m.collateralToken).transferFrom(msg.sender, address(this), lmsrCost),
             "Transfer failed"
         );
 
-        // Fee is a surcharge paid directly from buyer to collector (separate transfer)
         if (fee > 0 && feeCollector != address(0)) {
             require(
                 IERC20(m.collateralToken).transferFrom(msg.sender, feeCollector, fee),
@@ -274,11 +221,6 @@ contract MeridianMarket is Ownable {
         emit SharesBought(marketId, msg.sender, isYes, shares, lmsrCost, fee);
     }
 
-    /**
-     * @dev Sell shares back to the AMM before market expiry.
-     *      No additional fee on sell — the buyer already paid the entry fee.
-     *      Pool pays the full LMSR refund to the seller.
-     */
     function sell(uint256 marketId, bool isYes, uint256 shares) external {
         Market storage m = markets[marketId];
         require(m.b > 0, "Market does not exist");
@@ -307,8 +249,6 @@ contract MeridianMarket is Ownable {
         emit SharesSold(marketId, msg.sender, isYes, shares, refund, 0);
     }
 
-    // ─── Resolution ───
-
     function resolve(uint256 marketId, bool _outcome) external {
         require(msg.sender == oracle, "Only oracle");
         Market storage m = markets[marketId];
@@ -320,14 +260,6 @@ contract MeridianMarket is Ownable {
         emit MarketResolved(marketId, _outcome);
     }
 
-    /**
-     * @dev Claim winning payout (pro-rata / parimutuel).
-     *      payout = (userWinningShares / totalWinningShares) * totalCollateral
-     *
-     *      All collateral in the pool — from both the winning and losing sides —
-     *      flows to winners proportionally. Balances are zeroed before transfer
-     *      to prevent reentrancy.
-     */
     function claim(uint256 marketId) external {
         Market storage m = markets[marketId];
         require(m.isResolved, "Not resolved yet");
@@ -336,32 +268,27 @@ contract MeridianMarket is Ownable {
         uint256 totalWinningShares;
 
         if (m.outcome) {
-            userShares        = yesBalances[marketId][msg.sender];
+            userShares         = yesBalances[marketId][msg.sender];
             totalWinningShares = m.qYes;
         } else {
-            userShares        = noBalances[marketId][msg.sender];
+            userShares         = noBalances[marketId][msg.sender];
             totalWinningShares = m.qNo;
         }
 
-        // Check shares before pool — so a second claim reverts "No winning shares" not "Pool is empty"
         require(userShares > 0, "No winning shares");
         require(totalWinningShares > 0, "No winning shares in pool");
         require(m.totalCollateral > 0, "Pool is empty");
 
-        // Zero out before transfer — reentrancy guard
         if (m.outcome) {
             yesBalances[marketId][msg.sender] = 0;
         } else {
             noBalances[marketId][msg.sender] = 0;
         }
 
-        // Pro-rata share of the full collateral pool
         uint256 payout = (m.totalCollateral * userShares) / totalWinningShares;
 
-        // Guard: payout must be at least 1 unit of collateral (accounts for rounding dust)
         require(payout >= 1, "Payout rounds to zero");
 
-        // Cap payout at pool balance to prevent rounding from overdrawing
         if (payout > m.totalCollateral) payout = m.totalCollateral;
 
         m.totalCollateral -= payout;
@@ -369,8 +296,6 @@ contract MeridianMarket is Ownable {
 
         emit WinningsClaimed(marketId, msg.sender, payout);
     }
-
-    // ─── View Functions ───
 
     function getMarket(uint256 marketId) external view returns (
         string memory question,

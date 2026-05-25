@@ -19,31 +19,23 @@ interface IMeridianMarket {
     );
 }
 
-/**
- * @title ResolutionOracle
- * @dev Resolves prediction markets via data feeds (Tier 1) or admin verification (Tier 2).
- *      Now references markets by ID rather than by contract address.
- */
 contract ResolutionOracle is Ownable {
     enum OracleTier { Feed, Admin }
     enum ComparisonType { GreaterThan, LessThan, EqualTo, GreaterThanOrEqual, LessThanOrEqual }
 
     struct OracleConfig {
         OracleTier tier;
-        address feedAddress;        // Chainlink/Pyth feed (Tier 1 only)
-        ComparisonType comparison;  // How to compare feed value to threshold
-        int256 threshold;           // Value to compare against
-        uint256 expiry;             // When resolution can be triggered
+        address feedAddress;
+        ComparisonType comparison;
+        int256 threshold;
+        uint256 expiry;
         bool resolved;
     }
 
-    // The single MeridianMarket contract
     IMeridianMarket public meridianMarket;
 
-    // marketId => oracle config
     mapping(uint256 => OracleConfig) public oracleConfigs;
 
-    // Authorized verifiers for Tier 2 (admin) resolution
     mapping(address => bool) public verifiers;
 
     event OracleConfigured(uint256 indexed marketId, OracleTier tier, uint256 expiry);
@@ -60,9 +52,6 @@ contract ResolutionOracle is Ownable {
         _;
     }
 
-    /**
-     * @dev Configure oracle for a market
-     */
     function configureOracle(
         uint256 marketId,
         OracleTier tier,
@@ -90,9 +79,6 @@ contract ResolutionOracle is Ownable {
         emit OracleConfigured(marketId, tier, expiry);
     }
 
-    /**
-     * @dev Tier 1: Resolve a market from a Chainlink/Pyth data feed
-     */
     function resolveFromFeed(uint256 marketId) external {
         OracleConfig storage config = oracleConfigs[marketId];
         require(!config.resolved, "Already resolved");
@@ -112,9 +98,6 @@ contract ResolutionOracle is Ownable {
         emit MarketResolved(marketId, outcome, OracleTier.Feed);
     }
 
-    /**
-     * @dev Tier 2: Admin-verified resolution
-     */
     function resolveAdmin(uint256 marketId, bool outcome) external onlyVerifier {
         OracleConfig storage config = oracleConfigs[marketId];
         require(!config.resolved, "Already resolved");

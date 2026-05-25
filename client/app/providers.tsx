@@ -26,7 +26,6 @@ const arcTestnet = defineChain({
   },
 });
 
-// Wagmi config via Privy's createConfig (keeps Privy and Wagmi in sync)
 const wagmiConfig = createConfig({
   chains: [arcTestnet],
   transports: {
