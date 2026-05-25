@@ -5,6 +5,7 @@ import { Providers } from "./providers";
 import Link from "next/link";
 import { Globe, Activity, LayoutDashboard, Wallet } from "lucide-react";
 import { ConnectButton } from "@/components/ui/ConnectButton";
+import { Toaster } from "sonner";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -54,6 +55,7 @@ export default function RootLayout({
           <main className="flex-1 container mx-auto px-4 py-8">
             {children}
           </main>
+          <Toaster position="bottom-right" theme="dark" richColors />
         </Providers>
       </body>
     </html>

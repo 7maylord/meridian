@@ -11,6 +11,6 @@ export const CONFIG = {
     id: 5042002,
     name: "Arc Testnet",
     rpcUrl: process.env.NEXT_PUBLIC_ARC_RPC_URL || "https://rpc.testnet.arc-node.thecanteenapp.com/v1",
-    explorerUrl: "https://explorer.testnet.arc-node.thecanteenapp.com",
+    explorerUrl: "https://testnet.arcscan.app",
   },
 };

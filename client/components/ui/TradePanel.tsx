@@ -33,7 +33,6 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
     isBuy ? expectedShares.toFixed(18) : "0",
     18,
   );
-  const amountToApprove = parseUnits(amount || "0", 6);
 
   const registryAddress = CONFIG.contracts.marketFactory as `0x${string}`;
 
@@ -46,6 +45,13 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
     query: { enabled: isBuy && numAmount > 0 },
   });
   const buyCostUsdc = buyCostRaw ? Number(buyCostRaw as bigint) / 1e6 : 0;
+
+  // Approval must cover lmsrCost + 0.5% builder fee (two separate transferFrom calls).
+  // Use the on-chain cost when available; fall back to the input amount estimate.
+  const exactCost: bigint = buyCostRaw
+    ? (buyCostRaw as bigint)
+    : parseUnits(amount || "0", 6);
+  const amountToApprove = exactCost * BigInt(10100) / BigInt(10000); // 1% covers fee (0.5%) + slippage
   const slippage =
     buyCostUsdc > 0 && numAmount > 0
       ? Math.abs((buyCostUsdc - numAmount) / numAmount) * 100

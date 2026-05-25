@@ -14,9 +14,9 @@ const arcTestnet = defineChain({
   name: CONFIG.chain.name,
   network: "arc-testnet",
   nativeCurrency: {
-    decimals: 18,
-    name: "Ethereum",
-    symbol: "ETH",
+    decimals: 6,
+    name: "USD Coin",
+    symbol: "USDC",
   },
   rpcUrls: {
     default: { http: [CONFIG.chain.rpcUrl] },

@@ -1,7 +1,6 @@
 /**
- * Curated non-English financial RSS feeds.
- * Focused on FX rates, central bank policy, and trade — the verticals
- * Meridian prediction markets resolve against.
+ * Curated financial RSS feeds — global coverage for FX, central banks, trade policy.
+ * Feeds verified accessible; DNS-blocked or paywalled sources replaced with alternatives.
  */
 export interface FeedSource {
   url: string;
@@ -12,7 +11,7 @@ export interface FeedSource {
 }
 
 export const FEED_REGISTRY: FeedSource[] = [
-  // ── French (Eurozone / ECB policy) ──────────────────────────────────────
+  // ── French (ECB / EUR) ───────────────────────────────────────────────────
   {
     url: 'https://www.lemonde.fr/economie/rss_full.xml',
     language: 'fr',
@@ -21,56 +20,26 @@ export const FEED_REGISTRY: FeedSource[] = [
     vertical: 'central-bank',
   },
   {
-    url: 'https://www.lesechos.fr/rss/rss_finance.xml',
+    url: 'https://www.latribune.fr/rss/economie.html',
     language: 'fr',
-    name: 'Les Echos Finance',
+    name: 'La Tribune Économie',
     region: 'France',
     vertical: 'fx-direction',
-  },
-  {
-    url: 'https://bfmbusiness.bfmtv.com/rss/articles.xml',
-    language: 'fr',
-    name: 'BFM Business',
-    region: 'France',
-    vertical: 'trade-policy',
   },
 
   // ── German (Bundesbank / ECB) ────────────────────────────────────────────
   {
-    url: 'https://www.handelsblatt.com/contentexport/feed/schlagzeilen',
+    url: 'https://newsfeed.zeit.de/wirtschaft/index',
     language: 'de',
-    name: 'Handelsblatt',
+    name: 'Zeit Online Wirtschaft',
     region: 'Germany',
     vertical: 'central-bank',
   },
   {
-    url: 'https://www.faz.net/rss/aktuell/wirtschaft/',
+    url: 'https://www.spiegel.de/wirtschaft/index.rss',
     language: 'de',
-    name: 'FAZ Wirtschaft',
+    name: 'Spiegel Wirtschaft',
     region: 'Germany',
-    vertical: 'trade-policy',
-  },
-
-  // ── Portuguese (Brazil — BCB / BRL) ─────────────────────────────────────
-  {
-    url: 'https://feeds.folha.uol.com.br/mercado/rss091.xml',
-    language: 'pt',
-    name: 'Folha Mercado',
-    region: 'Brazil',
-    vertical: 'fx-direction',
-  },
-  {
-    url: 'https://www.infomoney.com.br/feed/',
-    language: 'pt',
-    name: 'InfoMoney',
-    region: 'Brazil',
-    vertical: 'central-bank',
-  },
-  {
-    url: 'https://valor.globo.com/rss/financas/index.xml',
-    language: 'pt',
-    name: 'Valor Econômico',
-    region: 'Brazil',
     vertical: 'trade-policy',
   },
 
@@ -90,6 +59,22 @@ export const FEED_REGISTRY: FeedSource[] = [
     vertical: 'fx-direction',
   },
 
+  // ── Portuguese — Brazil (BCB / BRL) ─────────────────────────────────────
+  {
+    url: 'https://feeds.folha.uol.com.br/mercado/rss091.xml',
+    language: 'pt',
+    name: 'Folha Mercado',
+    region: 'Brazil',
+    vertical: 'fx-direction',
+  },
+  {
+    url: 'https://www.infomoney.com.br/feed/',
+    language: 'pt',
+    name: 'InfoMoney',
+    region: 'Brazil',
+    vertical: 'central-bank',
+  },
+
   // ── Korean (BOK / KRW) ──────────────────────────────────────────────────
   {
     url: 'https://www.mk.co.kr/rss/30100041/',
@@ -98,69 +83,32 @@ export const FEED_REGISTRY: FeedSource[] = [
     region: 'Korea',
     vertical: 'central-bank',
   },
-  {
-    url: 'https://www.yna.co.kr/economy/all/rss.xml',
-    language: 'ko',
-    name: 'Yonhap Economy',
-    region: 'Korea',
-    vertical: 'trade-policy',
-  },
 
-  // ── Japanese (BOJ / JPY) ─────────────────────────────────────────────────
+  // ── Japanese (BOJ / JPY) — via Reuters Japan (English) ──────────────────
   {
-    url: 'https://www3.nhk.or.jp/rss/news/cat4.xml',
+    url: 'https://feeds.reuters.com/reuters/JPBusinessNews',
     language: 'ja',
-    name: 'NHK Economy',
+    name: 'Reuters Japan Business',
     region: 'Japan',
     vertical: 'central-bank',
   },
-  {
-    url: 'https://www.nikkei.com/rss/index.rdf',
-    language: 'ja',
-    name: 'Nikkei',
-    region: 'Japan',
-    vertical: 'fx-direction',
-  },
 
-  // ── Arabic (MENA / Gulf FX) ──────────────────────────────────────────────
+  // ── Arabic (MENA) — via Al-Monitor Economy ───────────────────────────────
   {
-    url: 'https://www.skynewsarabia.com/rss/economy.xml',
+    url: 'https://www.al-monitor.com/rss/economy',
     language: 'ar',
-    name: 'Sky News Arabia Economy',
-    region: 'MENA',
-    vertical: 'fx-direction',
-  },
-  {
-    url: 'https://www.alarabiya.net/arastudio/2023/5/22/rss.xml',
-    language: 'ar',
-    name: 'Al Arabiya Economy',
+    name: 'Al-Monitor Economy',
     region: 'MENA',
     vertical: 'trade-policy',
   },
 
-  // ── Turkish (CBRT / TRY) ─────────────────────────────────────────────────
+  // ── Turkish (CBRT / TRY) — via Anadolu Agency ───────────────────────────
   {
-    url: 'https://www.hurriyet.com.tr/rss/ekonomi',
+    url: 'https://www.aa.com.tr/en/rss/rss.php?cat=economy',
     language: 'tr',
-    name: 'Hürriyet Ekonomi',
+    name: 'Anadolu Agency Economy',
     region: 'Turkey',
     vertical: 'central-bank',
-  },
-  {
-    url: 'https://www.sabah.com.tr/rss?c=ekonomi',
-    language: 'tr',
-    name: 'Sabah Ekonomi',
-    region: 'Turkey',
-    vertical: 'fx-direction',
-  },
-
-  // ── Swahili (East Africa) ────────────────────────────────────────────────
-  {
-    url: 'https://rss.dw.com/rdf/rss-sw-eco',
-    language: 'sw',
-    name: 'DW Swahili Economy',
-    region: 'East Africa',
-    vertical: 'trade-policy',
   },
 
   // ── Nigeria (CBN / NGN / oil) ─────────────────────────────────────────────
@@ -186,27 +134,20 @@ export const FEED_REGISTRY: FeedSource[] = [
     vertical: 'trade-policy',
   },
 
-  // ── China (PBOC / CNY / trade) ───────────────────────────────────────────
+  // ── China (PBOC / CNY) — via South China Morning Post ───────────────────
   {
-    url: 'https://www.21jingji.com/rss.xml',
+    url: 'https://www.scmp.com/rss/5/feed',
     language: 'zh',
-    name: '21st Century Business Herald',
+    name: 'SCMP Business',
     region: 'China',
     vertical: 'trade-policy',
   },
   {
-    url: 'https://www.yicai.com/rss.html',
+    url: 'https://feeds.reuters.com/reuters/CNBusinessNews',
     language: 'zh',
-    name: 'Yicai (第一财经)',
+    name: 'Reuters China Business',
     region: 'China',
     vertical: 'central-bank',
-  },
-  {
-    url: 'https://www.cls.cn/api/sw?app=cls&terminal=pc&rss=1',
-    language: 'zh',
-    name: '财联社 CLS',
-    region: 'China',
-    vertical: 'fx-direction',
   },
 
   // ── Indonesia (BI / IDR) ─────────────────────────────────────────────────
@@ -217,13 +158,6 @@ export const FEED_REGISTRY: FeedSource[] = [
     region: 'Indonesia',
     vertical: 'central-bank',
   },
-  {
-    url: 'https://www.kontan.co.id/rss/news',
-    language: 'id',
-    name: 'Kontan',
-    region: 'Indonesia',
-    vertical: 'fx-direction',
-  },
 
   // ── Vietnam (SBV / VND) ──────────────────────────────────────────────────
   {
@@ -233,38 +167,40 @@ export const FEED_REGISTRY: FeedSource[] = [
     region: 'Vietnam',
     vertical: 'trade-policy',
   },
-  {
-    url: 'https://cafef.vn/thi-truong-chung-khoan.rss',
-    language: 'vi',
-    name: 'CafeF Markets',
-    region: 'Vietnam',
-    vertical: 'fx-direction',
-  },
 
-  // ── Malaysia (BNM / MYR) ─────────────────────────────────────────────────
+  // ── Southeast Asia (CNA — English) ───────────────────────────────────────
   {
-    url: 'https://www.theedgemarkets.com/rss',
+    url: 'https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml&category=6511',
     language: 'en',
-    name: 'The Edge Markets',
-    region: 'Malaysia',
-    vertical: 'central-bank',
-  },
-
-  // ── Thailand (BOT / THB) ─────────────────────────────────────────────────
-  {
-    url: 'https://www.bangkokpost.com/rss/data/business.xml',
-    language: 'en',
-    name: 'Bangkok Post Business',
-    region: 'Thailand',
+    name: 'CNA Business',
+    region: 'Southeast Asia',
     vertical: 'trade-policy',
   },
 
   // ── Philippines (BSP / PHP) ──────────────────────────────────────────────
   {
-    url: 'https://business.inquirer.net/feed',
+    url: 'https://www.philstar.com/rss/business',
     language: 'en',
-    name: 'Inquirer Business',
+    name: 'Philippine Star Business',
     region: 'Philippines',
     vertical: 'central-bank',
+  },
+
+  // ── Malaysia (BNM / MYR) — Bernama national news agency ─────────────────
+  {
+    url: 'https://www.bernama.com/services/bernama_rss.php?cat=biz',
+    language: 'en',
+    name: 'Bernama Business',
+    region: 'Malaysia',
+    vertical: 'central-bank',
+  },
+
+  // ── East Africa (via DW English) ─────────────────────────────────────────
+  {
+    url: 'https://rss.dw.com/rdf/rss-en-bus',
+    language: 'en',
+    name: 'DW Business (Africa)',
+    region: 'East Africa',
+    vertical: 'trade-policy',
   },
 ];

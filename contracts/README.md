@@ -6,9 +6,9 @@ Solidity smart contracts for the Meridian prediction market protocol — deploye
 
 | Contract | Address | Explorer |
 | :--- | :--- | :--- |
-| **MeridianMarket** | `0x2276EcD90c1E8A8939C70c8F70dcE69C3c2704f6` | [View](https://explorer.testnet.arc-node.thecanteenapp.com/address/0x2276EcD90c1E8A8939C70c8F70dcE69C3c2704f6) |
-| **ResolutionOracle** | `0x0bdE05DBFf1706586F5a499b4aA68A07E301ba0f` | [View](https://explorer.testnet.arc-node.thecanteenapp.com/address/0x0bdE05DBFf1706586F5a499b4aA68A07E301ba0f) |
-| **AgentVault** | `0x31f85C18172BAA5d796Ff140D8dB4799bcF1a8BF` | [View](https://explorer.testnet.arc-node.thecanteenapp.com/address/0x31f85C18172BAA5d796Ff140D8dB4799bcF1a8BF) |
+| **MeridianMarket** | `0x2276EcD90c1E8A8939C70c8F70dcE69C3c2704f6` | [View](https://testnet.arcscan.app/address/0x2276EcD90c1E8A8939C70c8F70dcE69C3c2704f6) |
+| **ResolutionOracle** | `0x0bdE05DBFf1706586F5a499b4aA68A07E301ba0f` | [View](https://testnet.arcscan.app/address/0x0bdE05DBFf1706586F5a499b4aA68A07E301ba0f) |
+| **AgentVault** | `0x31f85C18172BAA5d796Ff140D8dB4799bcF1a8BF` | [View](https://testnet.arcscan.app/address/0x31f85C18172BAA5d796Ff140D8dB4799bcF1a8BF) |
 
 **Deployer / Owner:** `0xAD6433f3a49eb065e6470F231a3dc3Dee26F0f9d`
 **Agent wallet (Circle):** `0x02B8513B41363D39C36AF102Fa50Ba6941e5Deb9`
