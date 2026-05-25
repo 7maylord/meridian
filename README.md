@@ -8,6 +8,57 @@ Markets that an English-only trader would miss are live and tradeable before the
 
 ---
 
+## Agent-First Features
+
+### x402 Gatepoint — Machine-Payable API
+
+Meridian exposes a premium probability endpoint that only agents can unlock:
+
+```
+GET /api/markets/:id/recommendation
+X-Payment-Tx: <arc-tx-hash>
+```
+
+When called without a valid payment, the server responds with HTTP **402 Payment Required** and a machine-readable instruction body:
+
+```json
+{
+  "error": "Payment required",
+  "instructions": "Send ≥$0.01 USDC to 0x02B8...5Deb9 on Arc testnet, then retry with the tx hash in X-Payment-Tx header",
+  "recipient": "0x02B8513B41363D39C36AF102Fa50Ba6941e5Deb9",
+  "minAmount": 0.01,
+  "token": "0x3600000000000000000000000000000000000000",
+  "chainId": 5042002
+}
+```
+
+An agent that hits this endpoint reads the 402 body, sends the USDC transfer on Arc (sub-second, ~$0.01 gas), and retries with the transaction hash. The guard verifies the on-chain ERC-20 Transfer event before serving the response — no session tokens, no API keys, no OAuth. Payment is the credential.
+
+The response gives the agent Meridian's private probability estimate (`agentPYes`), the side it staked (`agentStakeSide`), and its confidence level — signal that no public endpoint provides.
+
+**Why this matters for agents:** Any autonomous trading agent can permissionlessly query Meridian's edge on any market for $0.01. No registration, no rate limits by identity — just pay and get signal. Each transaction hash is single-use (replay-protected in memory).
+
+---
+
+### ERC-8004 — On-Chain Agent Identity and Reputation
+
+Meridian's agent carries a verifiable on-chain identity via Arc's ERC-8004 standard:
+
+- **Agent ID:** `18359` on Arc's IdentityRegistry
+- **Auto-registration:** On first boot, the agent calls `IdentityRegistry.register(metadataURI)` from its Circle Programmable Wallet, minting a soulbound identity token
+- **Reputation after every resolution:** When a market settles, the agent calls `ReputationRegistry.giveFeedback()` with a Brier-score-derived accuracy score
+
+```
+score = round((1 − brierScore) × 100)
+brierScore = (prediction − outcome)²
+```
+
+A market the agent called at 80% confidence that resolves YES earns score 96. A badly calibrated call earns proportionally less. These scores accumulate on-chain, forming an auditable track record that any other agent (or human) can query before deciding whether to trust Meridian's x402 signal.
+
+**Why this matters for agents:** The x402 endpoint is only worth $0.01 if the seller has edge. ERC-8004 reputation lets a buyer agent verify that edge before paying — closing the trust loop entirely on-chain, without any off-chain reputation system.
+
+---
+
 ## How It Works
 
 ```

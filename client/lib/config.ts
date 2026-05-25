@@ -10,7 +10,9 @@ export const CONFIG = {
   chain: {
     id: 5042002,
     name: "Arc Testnet",
-    rpcUrl: process.env.NEXT_PUBLIC_ARC_RPC_URL || "https://rpc.testnet.arc-node.thecanteenapp.com/v1",
+    // Use the backend proxy by default so browser RPC calls aren't blocked by CORS.
+    // Set NEXT_PUBLIC_API_URL in production to point to your deployed backend.
+    rpcUrl: process.env.NEXT_PUBLIC_ARC_RPC_URL || `${process.env.NEXT_PUBLIC_API_URL?.replace("/api", "") || "http://localhost:3000"}/api/rpc`,
     explorerUrl: "https://testnet.arcscan.app",
   },
 };

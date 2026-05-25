@@ -65,7 +65,13 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
     abi: ERC20_ABI as Abi,
     functionName: "allowance",
     args: address ? [address, registryAddress] : undefined,
-    query: { enabled: !!address && isBuy },
+    query: {
+      enabled: !!address && isBuy,
+      select: (data) => {
+        console.log("[TradePanel] allowance read →", data?.toString());
+        return data;
+      },
+    },
   });
 
   const sellSharesScaled = parseUnits(amount || "0", 18);
@@ -74,20 +80,65 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
     abi: MERIDIAN_MARKET_ABI as Abi,
     functionName: "getSellRefund",
     args: [marketIdBig, isYes, sellSharesScaled],
-    query: { enabled: !isBuy && numAmount > 0 },
+    query: {
+      enabled: !isBuy && numAmount > 0,
+      select: (data) => {
+        console.log("[TradePanel] sellRefund read →", data?.toString(), `(${Number(data ?? 0) / 1e6} USDC)`);
+        return data;
+      },
+    },
   });
   const sellRefund = sellRefundRaw ? Number(sellRefundRaw as bigint) / 1e6 : 0;
 
+  const { data: userPosition } = useReadContract({
+    address: registryAddress,
+    abi: MERIDIAN_MARKET_ABI as Abi,
+    functionName: "getUserPosition",
+    args: address ? [marketIdBig, address] : undefined,
+    query: {
+      enabled: !isBuy && !!address,
+      select: (data) => {
+        const [yes, no] = data as [bigint, bigint];
+        console.log("[TradePanel] userPosition read →", {
+          yesShares: (Number(yes) / 1e18).toFixed(6),
+          noShares: (Number(no) / 1e18).toFixed(6),
+        });
+        return data;
+      },
+    },
+  });
+
   const handleTrade = async () => {
     if (!amount || numAmount <= 0 || isProcessing) return;
+
+    console.log("[TradePanel] handleTrade start", {
+      action,
+      marketId: marketId.toString(),
+      amount,
+      numAmount,
+      isBuy,
+      isYes,
+    });
 
     setIsProcessing(true);
     try {
       if (isBuy) {
         const currentAllowance = allowance !== undefined ? (allowance as bigint) : BigInt(0);
 
-        // Approve if allowance is insufficient
+        console.log("[TradePanel] BUY path", {
+          usdcContract: CONFIG.contracts.usdc,
+          marketContract: registryAddress,
+          expectedShares: expectedSharesScaled.toString(),
+          buyCostRaw: buyCostRaw?.toString() ?? "not loaded",
+          buyCostUsdc,
+          exactCost: exactCost.toString(),
+          minAllowanceNeeded: minAllowanceNeeded.toString(),
+          currentAllowance: currentAllowance.toString(),
+          needsApproval: currentAllowance < minAllowanceNeeded,
+        });
+
         if (currentAllowance < minAllowanceNeeded) {
+          console.log("[TradePanel] Allowance insufficient — approving maxUint256");
           const approveToastId = toast.loading("Approving USDC...");
           const approvalHash = await writeContractAsync({
             address: CONFIG.contracts.usdc as `0x${string}`,
@@ -95,12 +146,21 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
             functionName: "approve",
             args: [registryAddress, maxUint256],
           });
+          console.log("[TradePanel] Approval tx submitted", approvalHash);
           toast.loading("Waiting for approval...", { id: approveToastId });
           await waitForTransactionReceipt(config, { hash: approvalHash });
+          console.log("[TradePanel] Approval confirmed");
           toast.success("USDC approved!", { id: approveToastId });
+        } else {
+          console.log("[TradePanel] Allowance sufficient — skipping approval");
         }
 
-        // Buy
+        console.log("[TradePanel] Submitting buy()", {
+          contract: registryAddress,
+          marketId: marketIdBig.toString(),
+          isYes,
+          shares: expectedSharesScaled.toString(),
+        });
         const buyToastId = toast.loading("Submitting trade...");
         const buyHash = await writeContractAsync({
           address: registryAddress,
@@ -108,12 +168,23 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
           functionName: "buy",
           args: [marketIdBig, isYes, expectedSharesScaled],
         });
+        console.log("[TradePanel] Buy tx submitted", buyHash);
         toast.loading("Waiting for confirmation...", { id: buyToastId });
         await waitForTransactionReceipt(config, { hash: buyHash });
+        console.log("[TradePanel] Buy confirmed ✓");
         toast.success("Trade confirmed!", { id: buyToastId });
         setAmount("");
       } else {
-        // Sell
+        const [posYes, posNo] = (userPosition as [bigint, bigint] | undefined) ?? [BigInt(0), BigInt(0)];
+        console.log("[TradePanel] SELL path", {
+          contract: registryAddress,
+          marketId: marketIdBig.toString(),
+          isYes,
+          sharesToSell: sellSharesScaled.toString(),
+          userYesShares: (Number(posYes) / 1e18).toFixed(6),
+          userNoShares: (Number(posNo) / 1e18).toFixed(6),
+          expectedRefund: sellRefund,
+        });
         const sellToastId = toast.loading("Submitting sell...");
         const sellHash = await writeContractAsync({
           address: registryAddress,
@@ -121,12 +192,15 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
           functionName: "sell",
           args: [marketIdBig, isYes, sellSharesScaled],
         });
+        console.log("[TradePanel] Sell tx submitted", sellHash);
         toast.loading("Waiting for confirmation...", { id: sellToastId });
         await waitForTransactionReceipt(config, { hash: sellHash });
+        console.log("[TradePanel] Sell confirmed ✓");
         toast.success("Shares sold!", { id: sellToastId });
         setAmount("");
       }
     } catch (err) {
+      console.error("[TradePanel] Transaction failed", err);
       const message = err instanceof Error ? err.message.split("\n")[0] : "Transaction failed";
       toast.error(message);
     } finally {
@@ -141,7 +215,8 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
     { id: "sell-no", label: "Sell NO", activeClass: "bg-orange-500 text-white" },
   ];
 
-  const isLoading = isProcessing || (isBuy && allowanceLoading);
+  const isReadingAllowance = isBuy && allowanceLoading && !isProcessing;
+  const isLoading = isProcessing || isReadingAllowance;
 
   return (
     <div className="glass-panel p-6">
@@ -231,7 +306,9 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
       >
         {!isConnected ? (
           <>Connect Wallet to Trade</>
-        ) : isLoading ? (
+        ) : isReadingAllowance ? (
+          <><Loader2 className="w-4 h-4 animate-spin" /> Loading...</>
+        ) : isProcessing ? (
           <><Loader2 className="w-4 h-4 animate-spin" /> Processing...</>
         ) : (
           <>

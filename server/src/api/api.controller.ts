@@ -89,6 +89,24 @@ export class ApiController {
   }
 
   /**
+   * RPC proxy — forwards JSON-RPC requests to the Arc node server-side,
+   * bypassing the browser CORS restriction on the Arc RPC endpoint.
+   */
+  @Post('rpc')
+  async rpcProxy(@Body() body: unknown) {
+    const rpcUrl = process.env.ARC_RPC_URL;
+    if (!rpcUrl) throw new Error('ARC_RPC_URL not configured');
+
+    const res = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    return res.json() as Promise<Record<string, unknown>>;
+  }
+
+  /**
    * Premium endpoint: returns the agent's current probability estimate for a market.
    * Requires a $0.01 USDC nanopayment — send tx hash in X-Payment-Tx header.
    */

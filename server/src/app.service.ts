@@ -9,8 +9,6 @@ export class AppService {
     return 'Hello World!';
   }
 
-  // Ping own /health endpoint every 10 minutes to prevent Render free tier sleep.
-  // Set PUBLIC_URL=https://<your-app>.onrender.com in Render env vars.
   @Cron(CronExpression.EVERY_10_MINUTES)
   async keepAlive(): Promise<void> {
     const url = process.env.PUBLIC_URL;

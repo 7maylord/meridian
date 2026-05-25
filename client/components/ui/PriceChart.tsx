@@ -35,12 +35,10 @@ export function PriceChart({ marketId }: PriceChartProps) {
     const [yesPrice] = data as [bigint, bigint];
     const price = Number(yesPrice) / 100; // bps → cents (0–100)
 
-    if (price === lastPriceRef.current) return;
-    lastPriceRef.current = price;
-
     const now = new Date();
     const label = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}:${now.getSeconds().toString().padStart(2, "0")}`;
 
+    lastPriceRef.current = price;
     setHistory((prev) => {
       const next = [...prev, { time: label, price }];
       return next.length > MAX_POINTS ? next.slice(-MAX_POINTS) : next;
