@@ -107,7 +107,53 @@ export class ApiController {
   }
 
   /**
-   * Premium endpoint: returns the agent's current probability estimate for a market.
+   * Premium endpoint — market discovery feed for external platforms.
+   *
+   * Returns recently active markets sourced from foreign-language news:
+   * question, agent probability, confidence, deadline, vertical, source language.
+   * Intended for prediction market platforms that want to import Meridian's
+   * foreign-news markets and list them on their own sites.
+   *
+   * Requires a $0.01 USDC nanopayment — send tx hash in X-Payment-Tx header.
+   */
+  @Get('markets/feed')
+  @UseGuards(NanopaymentGuard)
+  async getMarketFeed() {
+    const markets = await this.marketRepo.find({
+      where: { status: MarketStatus.ACTIVE },
+      order: { createdAt: 'DESC' },
+      take: 20,
+    });
+
+    return {
+      count: markets.length,
+      markets: markets.map((m) => ({
+        marketId: m.marketId,
+        question: m.question,
+        resolutionCriteria: m.resolutionCriteria,
+        agentPYes: m.pYes,
+        agentStakeSide: m.stakeSide,
+        confidence: m.confidence,
+        vertical: m.vertical,
+        sourceLanguage: m.sourceLanguage,
+        sourceName: m.sourceName,
+        settlementToken: m.settlementToken,
+        resolutionDeadline: m.resolutionDeadline,
+        createdAt: m.createdAt,
+        onChainId: m.marketId,
+        contractAddress: process.env.MERIDIAN_MARKET_ADDRESS,
+        chainId: 5042002,
+      })),
+    };
+  }
+
+  /**
+   * Premium endpoint — trading signal for a specific market.
+   *
+   * Returns Meridian's private probability estimate vs the current on-chain
+   * market price. The gap between agentPYes and the live price is the edge
+   * signal a trading agent pays to see before deciding to buy YES or NO.
+   *
    * Requires a $0.01 USDC nanopayment — send tx hash in X-Payment-Tx header.
    */
   @Get('markets/:id/recommendation')

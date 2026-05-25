@@ -1,18 +1,27 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MarketCard, MarketCardProps } from "@/components/ui/MarketCard";
 import { CONFIG } from "@/lib/config";
-import { Search, Filter, Lock, Bot, TrendingUp, Globe2, Zap, ArrowRight } from "lucide-react";
+import { Search, Filter, Lock, Bot, TrendingUp, Globe2, Zap, ArrowRight, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const VERTICALS = ["all", "central-bank", "fx-direction", "trade-policy"] as const;
 type Vertical = (typeof VERTICALS)[number];
 
+const X402_ENDPOINT = "https://meridian-hbnz.onrender.com/api/markets/:id/recommendation";
+
 export default function MarketDiscoveryPage() {
   const [search, setSearch] = useState("");
   const [vertical, setVertical] = useState<Vertical>("all");
+  const [copied, setCopied] = useState(false);
+
+  const copyEndpoint = useCallback(() => {
+    navigator.clipboard.writeText(X402_ENDPOINT);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, []);
 
   const { data: markets, isLoading } = useQuery({
     queryKey: ["markets"],
@@ -84,16 +93,33 @@ export default function MarketDiscoveryPage() {
           </div>
           <p className="text-sm font-semibold text-foreground mb-2">Pay-per-signal API</p>
           <p className="text-xs text-muted-foreground leading-relaxed mb-3">
-            Any agent that hits <code className="text-amber-400/80 bg-white/5 px-1 rounded">/api/markets/:id/recommendation</code> gets a machine-readable HTTP 402 back — recipient address, token, chain ID. Send $0.01 USDC on Arc, retry with the tx hash. No accounts, no rate limits by identity.
+            Any agent that hits the endpoint below gets a machine-readable HTTP 402 back — recipient address, token, chain ID. Send $0.01 USDC on Arc, retry with the tx hash. No accounts, no rate limits by identity.
           </p>
+          <div className="flex items-stretch rounded-lg overflow-hidden border border-white/10 mb-3">
+            <a
+              href="https://meridian-hbnz.onrender.com/api/markets/1/recommendation"
+              target="_blank"
+              rel="noreferrer"
+              className="flex-1 bg-white/5 px-2 py-1.5 font-mono text-[10px] text-amber-400/80 hover:text-amber-300 hover:bg-white/10 transition-colors break-all"
+            >
+              GET meridian-hbnz.onrender.com<br />/api/markets/:id/recommendation
+            </a>
+            <button
+              onClick={copyEndpoint}
+              className="px-2 bg-white/5 hover:bg-white/10 border-l border-white/10 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              title="Copy endpoint"
+            >
+              {copied ? <Check className="w-3 h-3 text-primary" /> : <Copy className="w-3 h-3" />}
+            </button>
+          </div>
           <div className="space-y-1 font-mono text-[10px]">
             <div className="flex items-center gap-2 text-muted-foreground">
               <ArrowRight className="w-3 h-3 text-amber-400 shrink-0" />
-              <span>GET recommendation → <span className="text-amber-400">402</span></span>
+              <span>→ <span className="text-amber-400">402</span> + payment instructions</span>
             </div>
             <div className="flex items-center gap-2 text-muted-foreground">
               <ArrowRight className="w-3 h-3 text-amber-400 shrink-0" />
-              <span>send $0.01 USDC on-chain</span>
+              <span>send $0.01 USDC on Arc</span>
             </div>
             <div className="flex items-center gap-2 text-muted-foreground">
               <ArrowRight className="w-3 h-3 text-primary shrink-0" />
@@ -112,7 +138,7 @@ export default function MarketDiscoveryPage() {
           </div>
           <p className="text-sm font-semibold text-foreground mb-2">On-chain agent reputation</p>
           <p className="text-xs text-muted-foreground leading-relaxed mb-3">
-            Meridian holds a soulbound identity token on Arc's IdentityRegistry (ID <span className="text-primary font-mono">18359</span>). After every market resolves, a Brier-score accuracy event is written to the ReputationRegistry — a verifiable track record any buyer agent can check before paying for signal.
+            Meridian holds a soulbound identity token on Arc&apos;s IdentityRegistry (ID <span className="text-primary font-mono">18359</span>). After every market resolves, a Brier-score accuracy event is written to the ReputationRegistry — a verifiable track record any buyer agent can check before paying for signal.
           </p>
           <div className="bg-white/5 rounded-lg p-2 font-mono text-[10px] text-muted-foreground space-y-0.5">
             <div><span className="text-primary">score</span> = round((1 − brierScore) × 100)</div>

@@ -17,14 +17,11 @@ Markets that an English-only trader would miss are live and tradeable before the
 
 ### x402 Gatepoint — Machine-Payable API
 
-Meridian exposes a premium probability endpoint that only agents can unlock:
+Meridian exposes two premium endpoints behind HTTP 402 payment gates — one for **market discovery** and one for **trading signal**. Both use the same payment mechanism: the caller pays $0.01 USDC on Arc and retries with the transaction hash. No API keys, no accounts, no rate limits by identity. Payment is the credential.
 
-```
-GET /api/markets/:id/recommendation
-X-Payment-Tx: <arc-tx-hash>
-```
+**The payment flow (identical for both endpoints):**
 
-When called without a valid payment, the server responds with HTTP **402 Payment Required** and a machine-readable instruction body:
+Any unauthenticated call returns HTTP **402 Payment Required** with a machine-readable body:
 
 ```json
 {
@@ -37,11 +34,39 @@ When called without a valid payment, the server responds with HTTP **402 Payment
 }
 ```
 
-An agent that hits this endpoint reads the 402 body, sends the USDC transfer on Arc (sub-second, ~$0.01 gas), and retries with the transaction hash. The guard verifies the on-chain ERC-20 Transfer event before serving the response — no session tokens, no API keys, no OAuth. Payment is the credential.
+The caller sends USDC on Arc (sub-second, ~$0.01 gas), then retries with `X-Payment-Tx: <tx-hash>`. The guard verifies the on-chain ERC-20 Transfer event. Each hash is single-use (replay-protected in memory).
 
-The response gives the agent Meridian's private probability estimate (`agentPYes`), the side it staked (`agentStakeSide`), and its confidence level — signal that no public endpoint provides.
+---
 
-**Why this matters for agents:** Any autonomous trading agent can permissionlessly query Meridian's edge on any market for $0.01. No registration, no rate limits by identity — just pay and get signal. Each transaction hash is single-use (replay-protected in memory).
+#### Endpoint 1 — Market Feed (for other prediction market platforms)
+
+```
+GET https://meridian-hbnz.onrender.com/api/markets/feed
+X-Payment-Tx: <arc-tx-hash>
+```
+
+**Who calls this:** Prediction market platforms, aggregators, or any application that wants to list fresh markets sourced from foreign-language financial news without running their own ingestion pipeline.
+
+**What it returns:** The 20 most recent active markets — question, resolution criteria, deadline, vertical (central-bank / fx-direction / trade-policy), source language, settlement token (USDC or EURC), on-chain market ID, and contract address — everything needed to list and trade a market on an external site.
+
+**The value:** Meridian reads Arabic central bank bulletins, Korean financial press, and Portuguese market commentary in real time. Platforms that pay $0.01 per call get a continuous feed of markets derived from information that has not yet reached English wire services. The information edge transfers to whoever lists first.
+
+---
+
+#### Endpoint 2 — Trading Recommendation (for autonomous trading agents)
+
+```
+GET https://meridian-hbnz.onrender.com/api/markets/:id/recommendation
+X-Payment-Tx: <arc-tx-hash>
+```
+
+**Who calls this:** An autonomous trading agent that has already discovered a Meridian market (free via `GET /api/markets`) and wants to know whether Meridian's AI sees an edge before placing a trade.
+
+**What it returns:** `agentPYes` (Meridian's private probability estimate), `agentStakeSide` (which side the agent staked), `confidence` (how certain the model is), and `resolutionDeadline`.
+
+**The value:** The public on-chain price reflects what all traders think. `agentPYes` is what Meridian's model estimated from the original foreign-language source article — before any market activity. If `agentPYes = 0.82` and the current market price is `0.60¢`, that's a 22-point gap. The $0.01 payment buys the signal to decide whether that gap represents genuine edge or noise.
+
+**The trust loop:** `agentPYes` is only worth $0.01 if Meridian has edge. ERC-8004 reputation (see below) lets a buyer agent verify Meridian's historical accuracy on-chain before paying — closing the trust loop without any off-chain reputation system.
 
 ---
 
