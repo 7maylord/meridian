@@ -226,12 +226,14 @@ ERC8004_AGENT_ID=18359
 ERC8004_METADATA_URI=ipfs://<your-metadata-cid>
 ```
 
-### `client/.env.local`
+### `client/.env`
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:3001/api
-NEXT_PUBLIC_ARC_RPC_URL=https://rpc.testnet.arc-node.thecanteenapp.com/v1/<key>
+NEXT_PUBLIC_API_URL=http://localhost:3000/api
+NEXT_PUBLIC_PRIVY_APP_ID=<privy app id>
 ```
+
+> All Arc RPC calls are proxied through the backend (`POST /api/rpc`) to avoid browser CORS restrictions. Do **not** set `NEXT_PUBLIC_ARC_RPC_URL` in the client — it would bypass the proxy and break all on-chain reads.
 
 ---
 
@@ -243,9 +245,11 @@ NEXT_PUBLIC_ARC_RPC_URL=https://rpc.testnet.arc-node.thecanteenapp.com/v1/<key>
 
 **Half-Kelly sizing.** The agent sizes positions at 0.5× Kelly fraction (max 20% of vault). This balances confidence signalling with risk management.
 
-**ERC-8004 reputation.** After each resolution, the agent records a Brier-score-derived reputation event (`score = round((1 - brierScore) × 100)`) on Arc's ReputationRegistry. Agents that consistently call markets correctly build an on-chain track record.
+**x402 payment gate.** The `/api/markets/:id/recommendation` endpoint speaks HTTP 402 — a machine-readable payment demand that tells the caller exactly what to send, to whom, and on which chain. No signup required; the on-chain ERC-20 Transfer event is the credential. Each tx hash is single-use. This is designed for agent-to-agent commerce: a trading agent pays $0.01 USDC and gets Meridian's private probability estimate in return.
 
-**Nanopayments.** The `/api/markets/:id/recommendation` endpoint requires a `X-Payment-Tx` header containing the hash of a USDC transfer (≥$0.01) to the agent wallet on Arc. The guard verifies the transfer on-chain before serving the agent's probability estimate.
+**ERC-8004 reputation.** After each resolution, the agent records a Brier-score-derived reputation event (`score = round((1 - brierScore) × 100)`) on Arc's ReputationRegistry. Agents consistently calling markets correctly build an auditable on-chain track record that buyers can verify before trusting the x402 signal.
+
+**Fee model — surcharge, not deduction.** The 0.5% builder fee is charged as a separate `transferFrom` on top of the LMSR cost. The pool receives exactly the LMSR cost, which keeps the pool accounting consistent with the cost function and allows round-trip buy→sell without liquidity shortfalls.
 
 ---
 

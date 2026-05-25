@@ -55,7 +55,7 @@ export function PriceChart({ marketId }: PriceChartProps) {
           </span>
         )}
       </div>
-      <div className="w-full h-[300px]">
+      <div className="w-full h-[300px] min-w-0">
         {history.length < 2 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
             Waiting for price data…

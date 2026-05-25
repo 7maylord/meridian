@@ -11,6 +11,51 @@ import { parseUnits, maxUint256 } from "viem";
 import type { Abi } from "viem";
 import { toast } from "sonner";
 
+/**
+ * Algebraic inverse of the LMSR cost function.
+ * Returns the exact number of shares (18-decimal bigint) whose LMSR cost
+ * equals `budgetUsdc` dollars, given current pool state.
+ *
+ * For NO:  s = (qYes − qNo) + b·ln(e^(C/b)·(1 + e^((qNo−qYes)/b)) − 1)
+ * For YES: s = (qNo − qYes) + b·ln(e^(C/b)·(1 + e^((qYes−qNo)/b)) − 1)
+ */
+function inverseLMSR(
+  b: bigint,
+  qYes: bigint,
+  qNo: bigint,
+  budgetUsdc: number,
+  isYes: boolean,
+): bigint {
+  if (budgetUsdc <= 0) return BigInt(0);
+  const b_f = Number(b) / 1e18;
+  const qYes_f = Number(qYes) / 1e18;
+  const qNo_f = Number(qNo) / 1e18;
+
+  const budgetOverB = budgetUsdc / b_f;
+
+  // For YES: delta = (qYes − qNo)/b — large when agent has staked heavily on YES
+  // For NO:  delta = (qNo − qYes)/b — negative (small) in that same scenario
+  if (isYes) {
+    const delta = (qYes_f - qNo_f) / b_f;
+    if (delta > 700) {
+      // p_yes ≈ 1, each YES share ≈ $1 → shares ≈ budget
+      return BigInt(Math.floor(budgetUsdc * 1e18));
+    }
+    const inner = Math.exp(budgetOverB) * (1 + Math.exp(delta)) - 1;
+    if (inner <= 0) return BigInt(0);
+    const shares = (qNo_f - qYes_f) + b_f * Math.log(inner);
+    if (shares <= 0) return BigInt(0);
+    return BigInt(Math.floor(shares * 1e18));
+  } else {
+    const delta = (qNo_f - qYes_f) / b_f; // negative when qYes > qNo, safe from overflow
+    const inner = Math.exp(budgetOverB) * (1 + Math.exp(delta)) - 1;
+    if (inner <= 0) return BigInt(0);
+    const shares = (qYes_f - qNo_f) + b_f * Math.log(inner);
+    if (shares <= 0) return BigInt(0);
+    return BigInt(Math.floor(shares * 1e18));
+  }
+}
+
 interface TradePanelProps {
   marketId: number | string;
   pYes: number;
@@ -33,13 +78,32 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
   const isYes = action === "buy-yes" || action === "sell-yes";
 
   const price = isYes ? pYes : 1 - pYes;
-  const expectedShares = isBuy ? numAmount / price : 0;
-  const expectedSharesScaled = parseUnits(
-    isBuy ? expectedShares.toFixed(18) : "0",
-    18,
-  );
 
   const registryAddress = CONFIG.contracts.marketFactory as `0x${string}`;
+
+  // markets() returns full struct including b, qYes, qNo needed for inverse LMSR
+  const { data: marketData } = useReadContract({
+    address: registryAddress,
+    abi: MERIDIAN_MARKET_ABI as Abi,
+    functionName: "markets",
+    args: [marketIdBig],
+  });
+  type MarketTuple = readonly [string, string, `0x${string}`, number, bigint, bigint, bigint, ...unknown[]];
+  const md = marketData as MarketTuple | undefined;
+  const collateralAddress = md?.[2] ?? (CONFIG.contracts.usdc as `0x${string}`);
+  const lmsrB = md?.[4];
+  const lmsrQYes = md?.[5];
+  const lmsrQNo = md?.[6];
+
+  // Use algebraic inverse when pool state is loaded; fall back to spot-price estimate
+  const expectedSharesScaled: bigint = (() => {
+    if (!isBuy || numAmount <= 0) return BigInt(0);
+    if (lmsrB && lmsrQYes !== undefined && lmsrQNo !== undefined) {
+      return inverseLMSR(lmsrB, lmsrQYes, lmsrQNo, numAmount, isYes);
+    }
+    return parseUnits((numAmount / price).toFixed(18), 18);
+  })();
+  const expectedShares = Number(expectedSharesScaled) / 1e18;
 
   const { data: buyCostRaw } = useReadContract({
     address: registryAddress,
@@ -54,14 +118,26 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
       ? Math.abs((buyCostUsdc - numAmount) / numAmount) * 100
       : 0;
 
-  // Minimum allowance needed: on-chain cost + 1% buffer for fee + slippage
+  // Minimum to spend: on-chain cost + 1% buffer covers 0.5% fee + slippage
   const exactCost: bigint = buyCostRaw
     ? (buyCostRaw as bigint)
     : parseUnits(amount || "0", 6);
   const minAllowanceNeeded = exactCost * BigInt(10100) / BigInt(10000);
 
+  const { data: userCollateralBalance } = useReadContract({
+    address: collateralAddress,
+    abi: ERC20_ABI as Abi,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: !!address && isBuy },
+  });
+  const userBalanceUsdc = userCollateralBalance ? Number(userCollateralBalance as bigint) / 1e6 : null;
+  const hasEnoughBalance = userCollateralBalance !== undefined
+    ? (userCollateralBalance as bigint) >= minAllowanceNeeded
+    : true; // optimistic until loaded
+
   const { data: allowance, isLoading: allowanceLoading } = useReadContract({
-    address: CONFIG.contracts.usdc as `0x${string}`,
+    address: collateralAddress,
     abi: ERC20_ABI as Abi,
     functionName: "allowance",
     args: address ? [address, registryAddress] : undefined,
@@ -121,12 +197,13 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
     });
 
     setIsProcessing(true);
+    let activeToastId: string | number | undefined;
     try {
       if (isBuy) {
         const currentAllowance = allowance !== undefined ? (allowance as bigint) : BigInt(0);
 
         console.log("[TradePanel] BUY path", {
-          usdcContract: CONFIG.contracts.usdc,
+          collateral: collateralAddress,
           marketContract: registryAddress,
           expectedShares: expectedSharesScaled.toString(),
           buyCostRaw: buyCostRaw?.toString() ?? "not loaded",
@@ -139,18 +216,19 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
 
         if (currentAllowance < minAllowanceNeeded) {
           console.log("[TradePanel] Allowance insufficient — approving maxUint256");
-          const approveToastId = toast.loading("Approving USDC...");
+          activeToastId = toast.loading("Approving token...");
           const approvalHash = await writeContractAsync({
-            address: CONFIG.contracts.usdc as `0x${string}`,
+            address: collateralAddress,
             abi: ERC20_ABI as Abi,
             functionName: "approve",
             args: [registryAddress, maxUint256],
           });
           console.log("[TradePanel] Approval tx submitted", approvalHash);
-          toast.loading("Waiting for approval...", { id: approveToastId });
+          toast.loading("Waiting for approval...", { id: activeToastId });
           await waitForTransactionReceipt(config, { hash: approvalHash });
           console.log("[TradePanel] Approval confirmed");
-          toast.success("USDC approved!", { id: approveToastId });
+          toast.success("Token approved!", { id: activeToastId });
+          activeToastId = undefined;
         } else {
           console.log("[TradePanel] Allowance sufficient — skipping approval");
         }
@@ -161,7 +239,7 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
           isYes,
           shares: expectedSharesScaled.toString(),
         });
-        const buyToastId = toast.loading("Submitting trade...");
+        activeToastId = toast.loading("Submitting trade...");
         const buyHash = await writeContractAsync({
           address: registryAddress,
           abi: MERIDIAN_MARKET_ABI as Abi,
@@ -169,10 +247,10 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
           args: [marketIdBig, isYes, expectedSharesScaled],
         });
         console.log("[TradePanel] Buy tx submitted", buyHash);
-        toast.loading("Waiting for confirmation...", { id: buyToastId });
+        toast.loading("Waiting for confirmation...", { id: activeToastId });
         await waitForTransactionReceipt(config, { hash: buyHash });
         console.log("[TradePanel] Buy confirmed ✓");
-        toast.success("Trade confirmed!", { id: buyToastId });
+        toast.success("Trade confirmed!", { id: activeToastId });
         setAmount("");
       } else {
         const [posYes, posNo] = (userPosition as [bigint, bigint] | undefined) ?? [BigInt(0), BigInt(0)];
@@ -185,7 +263,7 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
           userNoShares: (Number(posNo) / 1e18).toFixed(6),
           expectedRefund: sellRefund,
         });
-        const sellToastId = toast.loading("Submitting sell...");
+        activeToastId = toast.loading("Submitting sell...");
         const sellHash = await writeContractAsync({
           address: registryAddress,
           abi: MERIDIAN_MARKET_ABI as Abi,
@@ -193,13 +271,14 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
           args: [marketIdBig, isYes, sellSharesScaled],
         });
         console.log("[TradePanel] Sell tx submitted", sellHash);
-        toast.loading("Waiting for confirmation...", { id: sellToastId });
+        toast.loading("Waiting for confirmation...", { id: activeToastId });
         await waitForTransactionReceipt(config, { hash: sellHash });
         console.log("[TradePanel] Sell confirmed ✓");
-        toast.success("Shares sold!", { id: sellToastId });
+        toast.success("Shares sold!", { id: activeToastId });
         setAmount("");
       }
     } catch (err) {
+      if (activeToastId !== undefined) toast.dismiss(activeToastId);
       console.error("[TradePanel] Transaction failed", err);
       const message = err instanceof Error ? err.message.split("\n")[0] : "Transaction failed";
       toast.error(message);
@@ -277,6 +356,12 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
                   {numAmount > 0 && buyCostUsdc > 0 ? `${slippage.toFixed(2)}%` : "—"}
                 </span>
               </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Your Balance</span>
+                <span className={!hasEnoughBalance ? "text-red-400 font-medium" : "text-muted-foreground font-mono"}>
+                  {userBalanceUsdc !== null ? `$${userBalanceUsdc.toFixed(2)}` : "—"}
+                </span>
+              </div>
             </>
           ) : (
             <>
@@ -301,11 +386,13 @@ export function TradePanel({ marketId, pYes }: TradePanelProps) {
 
       <button
         onClick={handleTrade}
-        disabled={isLoading || !isConnected}
+        disabled={isLoading || !isConnected || (isBuy && !hasEnoughBalance)}
         className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {!isConnected ? (
           <>Connect Wallet to Trade</>
+        ) : isBuy && !hasEnoughBalance ? (
+          <>Insufficient Balance</>
         ) : isReadingAllowance ? (
           <><Loader2 className="w-4 h-4 animate-spin" /> Loading...</>
         ) : isProcessing ? (
