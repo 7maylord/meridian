@@ -40,7 +40,10 @@ export function PriceChart({ marketId }: PriceChartProps) {
 
     lastPriceRef.current = price;
     setHistory((prev) => {
-      const next = [...prev, { time: label, price }];
+      // Seed with two identical points so the chart renders immediately on first data
+      const next = prev.length === 0
+        ? [{ time: label, price }, { time: label, price }]
+        : [...prev, { time: label, price }];
       return next.length > MAX_POINTS ? next.slice(-MAX_POINTS) : next;
     });
   }, [data]);
@@ -61,7 +64,7 @@ export function PriceChart({ marketId }: PriceChartProps) {
             Waiting for price data…
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" debounce={5}>
             <LineChart data={history} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
               <XAxis

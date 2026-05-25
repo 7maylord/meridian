@@ -2,6 +2,11 @@
 
 **Autonomous Prediction Markets for Non-English Financial News — Built on Arc**
 
+| | |
+|---|---|
+| **Frontend** | https://meridian-x.vercel.app/ |
+| **Backend API** | https://meridian-hbnz.onrender.com/ |
+
 Meridian is a self-sustaining prediction market factory. An autonomous AI agent monitors foreign-language financial news (Arabic, Mandarin, Portuguese, Korean, Japanese, Swahili, Turkish, French), structures binary prediction questions in real time, stakes USDC on its own probability estimates via Kelly sizing, bootstraps LMSR liquidity as an AMM, and earns 0.5% builder fees on every trade.
 
 Markets that an English-only trader would miss are live and tradeable before the news hits Western wire services.
